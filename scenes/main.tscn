@@ -29,29 +29,30 @@ fog_density = 0.00009
 
 [node name="TerrainChunkManager" type="Node3D" parent="."]
 script = ExtResource("1_mgr")
-data_file = "res://terrain/terrain_data.bin"
-meta_file = "res://terrain/terrain_meta.json"
+height_file = "res://terrain/height.bin"
+meta_file = "res://terrain/cdlod_meta.json"
 target_path = NodePath("../FlyCamera")
-texel_size = 4.0
+world_size = 5120.0
 height_scale = 340.0
 auto_center = true
-show_in_editor = true
-editor_preview_lod = 1
-load_radius = 4
-unload_radius = 6
-lod_distances = PackedFloat32Array(1400, 3000)
-lod_hysteresis = 120.0
-skirt_depth = 90.0
+base_range = 140.0
+morph_start_ratio = 0.72
+max_nodes = 1024
+enable_collision = true
+collision_window = 129
+collision_rebuild_dist = 24.0
 terrain_shader = ExtResource("2_shd")
+show_in_editor = true
+editor_preview_level = 3
 verbose_log = true
 
 [node name="TerrainBaker" type="Node" parent="."]
 script = ExtResource("4_bake")
 source_exr = "res://heightmap/yarimada_16bit.exr"
-data_file = "res://terrain/terrain_data.bin"
-meta_file = "res://terrain/terrain_meta.json"
-target_size = 1280
-chunk_size = 128
+height_file = "res://terrain/height.bin"
+meta_file = "res://terrain/cdlod_meta.json"
+lod_levels = 7
+leaf_grid = 32
 
 [node name="FlyCamera" type="Camera3D" parent="."]
 transform = Transform3D(0.75460553, 0.31238446, -0.5770498, 0, 0.8794095, 0.4760661, 0.6561787, -0.3592421, 0.66360724, -2000, 1800, 2300)
