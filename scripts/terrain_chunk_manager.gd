@@ -378,8 +378,10 @@ func _update_collision() -> void:
 	# hedefin texel koordinati
 	var tcx := int(round((tp.x - _world_min.x) / ws))
 	var tcy := int(round((tp.z - _world_min.y) / ws))
-	var x0 := clampi(tcx - w / 2, 0, _hr - w - 1)
-	var y0 := clampi(tcy - w / 2, 0, _hr - w - 1)
+	@warning_ignore("integer_division")
+	var hw := w / 2
+	var x0 := clampi(tcx - hw, 0, _hr - w - 1)
+	var y0 := clampi(tcy - hw, 0, _hr - w - 1)
 	var data := PackedFloat32Array()
 	data.resize(w * w)
 	for ry in w:
