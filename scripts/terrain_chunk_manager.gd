@@ -46,6 +46,34 @@ class_name TerrainChunkManager
 @export_group("Rendering")
 @export var terrain_shader: Shader
 
+@export_group("Terrain Textures")
+## Her yuvaya Inspector'dan doku dosyasi (png/jpg/exr...) surukle/sec.
+## Hicbiri atanmazsa duz renk dolgusu kullanilir (eski gorunum).
+@export_subgroup("Alcak (cim/zemin)")
+@export var low_albedo: Texture2D
+@export var low_normal: Texture2D
+@export_subgroup("Egim (kaya/yamac)")
+@export var slope_albedo: Texture2D
+@export var slope_normal: Texture2D
+@export_subgroup("Yuksek (kar/zirve)")
+@export var high_albedo: Texture2D
+@export var high_normal: Texture2D
+@export_subgroup("Detay (yakin zenginlik)")
+@export var detail_albedo: Texture2D
+@export var detail_normal: Texture2D
+@export_subgroup("Ayar")
+## Metre / doku tekrari (kucuk = sik desen)
+@export var tex_tiling: float = 24.0
+@export var detail_tiling: float = 4.0
+@export_range(0.0, 1.0) var detail_strength: float = 0.35
+@export_range(0.0, 2.0) var normal_strength: float = 1.0
+## Yukseklik karisim esikleri (0..1 ham yukseklik)
+@export var height_blend_start: float = 0.55
+@export var height_blend_end: float = 0.78
+## Egim karisim esikleri (0=duz .. 1=dik)
+@export var slope_blend_start: float = 0.35
+@export var slope_blend_end: float = 0.70
+
 @export_group("Editor Preview")
 @export var show_in_editor: bool = true
 ## Editor onizlemesinin tek-tip cizecegi LOD seviyesi
@@ -336,6 +364,32 @@ func _set_static_uniforms(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("height_offset", height_offset)
 	mat.set_shader_parameter("hr", float(_hr))
 	mat.set_shader_parameter("grid_cells", float(_leaf_grid))
+	_set_texture_uniforms(mat)
+
+
+func _set_texture_uniforms(mat: ShaderMaterial) -> void:
+	var alb_on := low_albedo != null and slope_albedo != null and high_albedo != null
+	var nrm_on := low_normal != null and slope_normal != null and high_normal != null
+	var det_on := detail_albedo != null
+	mat.set_shader_parameter("low_albedo", low_albedo)
+	mat.set_shader_parameter("low_normal", low_normal)
+	mat.set_shader_parameter("slope_albedo", slope_albedo)
+	mat.set_shader_parameter("slope_normal", slope_normal)
+	mat.set_shader_parameter("high_albedo", high_albedo)
+	mat.set_shader_parameter("high_normal", high_normal)
+	mat.set_shader_parameter("detail_albedo", detail_albedo)
+	mat.set_shader_parameter("detail_normal", detail_normal)
+	mat.set_shader_parameter("albedo_on", alb_on)
+	mat.set_shader_parameter("normal_on", nrm_on)
+	mat.set_shader_parameter("detail_on", det_on)
+	mat.set_shader_parameter("tex_tiling", tex_tiling)
+	mat.set_shader_parameter("detail_tiling", detail_tiling)
+	mat.set_shader_parameter("detail_strength", detail_strength)
+	mat.set_shader_parameter("normal_strength", normal_strength)
+	mat.set_shader_parameter("high_start", height_blend_start)
+	mat.set_shader_parameter("high_end", height_blend_end)
+	mat.set_shader_parameter("slope_start", slope_blend_start)
+	mat.set_shader_parameter("slope_end", slope_blend_end)
 
 
 func _get_camera() -> Camera3D:

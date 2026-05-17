@@ -31,15 +31,24 @@ var _mgr: Node = null
 
 
 func _ready() -> void:
-	_joystick = get_tree().get_first_node_in_group("vjoystick") as Control
+	# ONEMLI: joystick/jumpbtn kendilerini _ready'de gruba ekler ve sahne
+	# agacinda Player onlardan ONCE _ready olur. Bu yuzden referanslari
+	# _ready'nin BASINDA almak null verir. Iki kareyi bekleyip sonra al.
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_mgr = get_tree().get_first_node_in_group("terrain")
 	var jb := get_tree().get_first_node_in_group("jumpbtn")
-	if jb != null and jb.has_signal("pressed"):
+	if jb != null and jb.has_signal("pressed") \
+			and not jb.pressed.is_connected(_try_jump):
 		jb.pressed.connect(_try_jump)
-	# manager _ready (heightmap yukleme) bittikten sonra zemine otur
-	await get_tree().process_frame
-	await get_tree().process_frame
 	_snap_to_ground()
+
+
+## Joystick'i tembel coz (sira/zamanlama ne olursa olsun guvenli).
+func _get_joystick() -> Control:
+	if _joystick == null or not is_instance_valid(_joystick):
+		_joystick = get_tree().get_first_node_in_group("vjoystick") as Control
+	return _joystick
 
 
 func _snap_to_ground() -> void:
@@ -68,8 +77,9 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e is InputEventScreenDrag:
 		# sag yari = kamera bakis (joystick'in kullandigi parmak haric)
 		var ji := -123
-		if _joystick != null and _joystick.has_method("get_active_index"):
-			ji = _joystick.get_active_index()
+		var js := _get_joystick()
+		if js != null and js.has_method("get_active_index"):
+			ji = js.get_active_index()
 		var half := get_viewport().get_visible_rect().size.x * 0.5
 		if e.index != ji and e.position.x > half:
 			_look(-e.relative.x * touch_sensitivity,
@@ -88,9 +98,10 @@ func _move_input() -> Vector2:
 	if Input.is_action_pressed("move_back"):     v.y -= 1.0
 	if Input.is_action_pressed("move_left"):     v.x -= 1.0
 	if Input.is_action_pressed("move_right"):    v.x += 1.0
-	# joystick (varsa ekle)
-	if _joystick != null and _joystick.has_method("get_value"):
-		v += _joystick.get_value()
+	# joystick (varsa ekle) - tembel coz
+	var js := _get_joystick()
+	if js != null and js.has_method("get_value"):
+		v += js.get_value()
 	if v.length() > 1.0:
 		v = v.normalized()
 	return v

@@ -107,7 +107,7 @@ environment = SubResource("Env")
 
 [node name="TouchUI" type="CanvasLayer" parent="."]
 
-[node name="Joystick" type="Control" parent="TouchUI"]
+[node name="Joystick" type="Control" parent="TouchUI" groups=["vjoystick"]]
 anchors_preset = -1
 anchor_top = 0.4
 anchor_right = 0.55
