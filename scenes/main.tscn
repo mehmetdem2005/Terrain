@@ -23,7 +23,7 @@ ambient_light_energy = 0.45
 tonemap_mode = 2
 fog_enabled = true
 fog_light_color = Color(0.72, 0.79, 0.82, 1)
-fog_density = 0.0015
+fog_density = 0.00012
 
 [node name="Main" type="Node3D"]
 
@@ -32,8 +32,8 @@ script = ExtResource("1_mgr")
 data_file = "res://terrain/terrain_data.bin"
 meta_file = "res://terrain/terrain_meta.json"
 target_path = NodePath("../FlyCamera")
-texel_size = 1.0
-height_scale = 120.0
+texel_size = 3.0
+height_scale = 260.0
 auto_center = true
 show_in_editor = true
 editor_preview_lod = 1
@@ -51,9 +51,9 @@ target_size = 1280
 chunk_size = 128
 
 [node name="FlyCamera" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.7646279, 0.64447206, 0, -0.64447206, 0.7646279, 0, 320, 90)
+transform = Transform3D(0.7498379, 0.3054607, -0.5868875, 0, 0.887044, 0.46168485, 0.66162163, -0.34618878, 0.6651392, -1500, 1300, 1700)
 current = true
-far = 2000.0
+far = 7000.0
 script = ExtResource("3_cam")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
