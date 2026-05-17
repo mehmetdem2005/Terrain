@@ -12,7 +12,10 @@ uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform float height_scale   = 12.0;
 uniform float height_offset  = 0.0;
 uniform float chunk_world_size = 128.0;
-uniform float tex_texel      = 0.0078125;
+// UV uzayinda bir texel (komsu ornekleme offseti) = 1/verts
+uniform float uv_texel       = 0.00775194;
+// Komsu iki texel arasi DUNYA mesafesi (normal egim olcegi) = chunk/(verts-1)
+uniform float world_step     = 1.0;
 
 uniform bool use_albedo = false;
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap;
@@ -34,12 +37,11 @@ void vertex() {
 
 	// Komsu texel farkindan normal (vertex'te 2 ekstra fetch -> ucuz)
 	// merkezi fark -> chunk birlesiminde isik kaynakli cizgiyi azaltir
-	float hxp = sample_h(uv + vec2(tex_texel, 0.0));
-	float hxn = sample_h(uv - vec2(tex_texel, 0.0));
-	float hzp = sample_h(uv + vec2(0.0, tex_texel));
-	float hzn = sample_h(uv - vec2(0.0, tex_texel));
-	float step_m = chunk_world_size * tex_texel;
-	vec3 n = normalize(vec3(hxn - hxp, 2.0 * step_m, hzn - hzp));
+	float hxp = sample_h(uv + vec2(uv_texel, 0.0));
+	float hxn = sample_h(uv - vec2(uv_texel, 0.0));
+	float hzp = sample_h(uv + vec2(0.0, uv_texel));
+	float hzn = sample_h(uv - vec2(0.0, uv_texel));
+	vec3 n = normalize(vec3(hxn - hxp, 2.0 * world_step, hzn - hzp));
 	NORMAL = n;
 
 	v_h01   = texture(height_tex, uv).r;

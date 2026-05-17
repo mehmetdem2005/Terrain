@@ -5,7 +5,7 @@ class_name TerrainChunkManager
 #  TERRAIN CHUNK MANAGER  -  Godot 4.6
 #  - OYUN MODU: WorkerThreadPool ile arka-thread streaming + LOD + collision
 #  - EDITOR MODU: tum chunk'lari aninda yukler (proje acilir acilmaz gorunur)
-#  Chunk formati: ham half-float (.bin), terrain_baker.gd uretir.
+#  Chunk formati: ham 32-bit float / FORMAT_RF (.bin), terrain_baker.gd uretir.
 # =====================================================================
 
 @export_group("Paths")
@@ -99,6 +99,7 @@ var _results_mutex := Mutex.new()
 var _pool: Array[MeshInstance3D] = []
 var _accum: float = 0.0
 var _editor_nodes: Array[Node] = []
+var _editor_busy: bool = false           # _editor_refresh re-entrancy guard
 
 
 func _ready() -> void:
@@ -139,13 +140,19 @@ func _process(delta: float) -> void:
 
 # === EDITOR ONIZLEME =================================================
 func _editor_refresh() -> void:
+	if _editor_busy:
+		return
+	_editor_busy = true
 	_clear_editor_preview()
 	if not show_in_editor:
+		_editor_busy = false
 		return
 	if terrain_shader == null:
 		push_warning("Editor onizleme: 'terrain_shader' atanmamis.")
+		_editor_busy = false
 		return
 	if not _load_meta():
+		_editor_busy = false
 		return
 	_build_lod_meshes()
 	var lod_i := clampi(editor_preview_lod, 0, _lod_meshes.size() - 1)
@@ -167,13 +174,20 @@ func _editor_refresh() -> void:
 			count += 1
 	if verbose_log:
 		print("[Terrain] Editor onizleme: %d chunk yuklendi." % count)
+	_editor_busy = false
 
 
+## Onizleme node'larini temizler. Script reload sonrasi _editor_nodes
+## sifirlandigi icin cocuklari "preview_" adina gore de tarar -> orphan
+## node birikmesini (editor sismesi/donmasi) onler.
 func _clear_editor_preview() -> void:
 	for n in _editor_nodes:
 		if is_instance_valid(n):
 			n.queue_free()
 	_editor_nodes.clear()
+	for child in get_children():
+		if child is MeshInstance3D and child.name.begins_with("preview_"):
+			child.queue_free()
 
 
 # === METADATA & YARDIMCILAR ==========================================
@@ -213,7 +227,7 @@ func _chunk_pos(cx: int, cy: int) -> Vector3:
 							 (cy + 0.5) * _chunk_world)
 
 
-## Birlestirilmis veriden bir chunk'i offset ile keser, half-float Image dondurur.
+## Birlestirilmis veriden bir chunk'i offset ile keser, FORMAT_RF Image dondurur.
 func _load_chunk_image(cx: int, cy: int) -> Image:
 	if _data_bytes.is_empty():
 		return null
@@ -304,7 +318,10 @@ func _make_material(height_tex: Texture2D) -> ShaderMaterial:
 	mat.set_shader_parameter("height_scale", height_scale)
 	mat.set_shader_parameter("height_offset", height_offset)
 	mat.set_shader_parameter("chunk_world_size", _chunk_world)
-	mat.set_shader_parameter("tex_texel", 1.0 / float(_verts - 1))
+	# UV uzayinda bir texel = 1/verts (UV araligi [0.5/verts, (verts-0.5)/verts]).
+	mat.set_shader_parameter("uv_texel", 1.0 / float(_verts))
+	# Komsu iki texel arasi DUNYA mesafesi (normal egimi icin dogru olcek).
+	mat.set_shader_parameter("world_step", _chunk_world / float(_verts - 1))
 	mat.set_shader_parameter("use_albedo", albedo_texture != null)
 	if albedo_texture != null:
 		mat.set_shader_parameter("albedo_tex", albedo_texture)
