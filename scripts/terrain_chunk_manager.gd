@@ -83,6 +83,7 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		_editor_refresh()
 		return
+	add_to_group("terrain")
 	if target_path != NodePath():
 		_target = get_node_or_null(target_path) as Node3D
 	if not _init_common():
@@ -341,6 +342,29 @@ func _get_camera() -> Camera3D:
 	if _target is Camera3D:
 		return _target
 	return get_viewport().get_camera_3d()
+
+
+## Dunya (x,z) noktasindaki arazi yuksekligi (metre). Oyuncuyu zemine
+## oturtmak / spawn icin disaridan cagrilabilir. Bilineer ornekleme.
+func get_terrain_height(wx: float, wz: float) -> float:
+	if _height_img == null or _hr <= 1:
+		return height_offset
+	var u := clampf((wx - _world_min.x) / world_size, 0.0, 1.0)
+	var v := clampf((wz - _world_min.y) / world_size, 0.0, 1.0)
+	var fx := u * float(_hr - 1)
+	var fy := v * float(_hr - 1)
+	var x0 := int(floor(fx))
+	var y0 := int(floor(fy))
+	var x1 := mini(x0 + 1, _hr - 1)
+	var y1 := mini(y0 + 1, _hr - 1)
+	var tx := fx - float(x0)
+	var ty := fy - float(y0)
+	var h00 := _height_img.get_pixel(x0, y0).r
+	var h10 := _height_img.get_pixel(x1, y0).r
+	var h01 := _height_img.get_pixel(x0, y1).r
+	var h11 := _height_img.get_pixel(x1, y1).r
+	var h := lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), ty)
+	return h * height_scale + height_offset
 
 
 # === COLLISION (fareyi takip eden tek kayan pencere) =================

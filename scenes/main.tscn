@@ -1,9 +1,10 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/terrain_chunk_manager.gd" id="1_mgr"]
 [ext_resource type="Shader" path="res://terrain/terrain_displacement.gdshader" id="2_shd"]
-[ext_resource type="Script" path="res://scripts/fly_camera.gd" id="3_cam"]
 [ext_resource type="Script" path="res://scripts/terrain_baker.gd" id="4_bake"]
+[ext_resource type="Script" path="res://scripts/player.gd" id="5_ply"]
+[ext_resource type="Script" path="res://scripts/virtual_joystick.gd" id="6_joy"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
 sky_top_color = Color(0.38, 0.55, 0.78, 1)
@@ -25,13 +26,25 @@ fog_enabled = true
 fog_light_color = Color(0.72, 0.79, 0.82, 1)
 fog_density = 0.00009
 
+[sub_resource type="CapsuleShape3D" id="Caps_shape"]
+radius = 0.5
+height = 2.0
+
+[sub_resource type="CapsuleMesh" id="Caps_mesh"]
+radius = 0.5
+height = 2.0
+
+[sub_resource type="StandardMaterial3D" id="Ply_mat"]
+albedo_color = Color(0.85, 0.35, 0.22, 1)
+roughness = 0.6
+
 [node name="Main" type="Node3D"]
 
 [node name="TerrainChunkManager" type="Node3D" parent="."]
 script = ExtResource("1_mgr")
 height_file = "res://terrain/height.bin"
 meta_file = "res://terrain/cdlod_meta.json"
-target_path = NodePath("../FlyCamera")
+target_path = NodePath("../Player")
 world_size = 5120.0
 height_scale = 340.0
 auto_center = true
@@ -54,11 +67,32 @@ meta_file = "res://terrain/cdlod_meta.json"
 lod_levels = 7
 leaf_grid = 32
 
-[node name="FlyCamera" type="Camera3D" parent="."]
-transform = Transform3D(0.75460553, 0.31238446, -0.5770498, 0, 0.8794095, 0.4760661, 0.6561787, -0.3592421, 0.66360724, -2000, 1800, 2300)
+[node name="Player" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 400, 0)
+collision_layer = 2
+collision_mask = 1
+script = ExtResource("5_ply")
+
+[node name="Collision" type="CollisionShape3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("Caps_shape")
+
+[node name="Mesh" type="MeshInstance3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+mesh = SubResource("Caps_mesh")
+surface_material_override/0 = SubResource("Ply_mat")
+
+[node name="CameraPivot" type="Node3D" parent="Player"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.6, 0)
+
+[node name="SpringArm3D" type="SpringArm3D" parent="Player/CameraPivot"]
+spring_length = 7.0
+margin = 0.2
+collision_mask = 1
+
+[node name="Camera3D" type="Camera3D" parent="Player/CameraPivot/SpringArm3D"]
 current = true
 far = 9000.0
-script = ExtResource("3_cam")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 200, 0)
@@ -66,3 +100,39 @@ shadow_enabled = true
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Env")
+
+[node name="TouchUI" type="CanvasLayer" parent="."]
+
+[node name="Joystick" type="Control" parent="TouchUI"]
+anchors_preset = -1
+anchor_top = 0.4
+anchor_right = 0.55
+anchor_bottom = 1.0
+grow_horizontal = 1
+grow_vertical = 0
+mouse_filter = 1
+script = ExtResource("6_joy")
+
+[node name="JumpButton" type="Button" parent="TouchUI" groups=["jumpbtn"]]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -240.0
+offset_top = -200.0
+offset_right = -40.0
+offset_bottom = -60.0
+grow_horizontal = 0
+grow_vertical = 0
+theme_override_font_sizes/font_size = 30
+text = "ZIPLA"
+
+[node name="Hint" type="Label" parent="TouchUI"]
+anchors_preset = 0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 760.0
+offset_bottom = 40.0
+theme_override_font_sizes/font_size = 18
+text = "Masaustu: WASD yuru, Shift kos, Space zipla, sol tik ile fare kilitle (bakis), ESC birak"
