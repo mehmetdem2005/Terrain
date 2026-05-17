@@ -23,7 +23,7 @@ ambient_light_energy = 0.45
 tonemap_mode = 2
 fog_enabled = true
 fog_light_color = Color(0.72, 0.79, 0.82, 1)
-fog_density = 0.0015
+fog_density = 0.0004
 
 [node name="Main" type="Node3D"]
 
