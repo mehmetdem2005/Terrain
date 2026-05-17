@@ -51,7 +51,7 @@ target_size = 1280
 chunk_size = 128
 
 [node name="FlyCamera" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.766044, -0.642788, 0, 0.642788, 0.766044, 0, 300, 360)
+transform = Transform3D(1, 0, 0, 0, 0.7646279, 0.64447206, 0, -0.64447206, 0.7646279, 0, 320, 90)
 current = true
 far = 2000.0
 script = ExtResource("3_cam")
