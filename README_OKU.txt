@@ -52,9 +52,21 @@ AYARLAR (Inspector)
   auto_center acik -> arazi dunya orijinine ortali.
 
 
+GITHUB DEPOSUNDAN KURULUM (ikili dosyalar depoda yok)
+-----------------------------------------------------
+  Buyuk ikili dosyalar (.exr kaynak heightmap ve uretilen
+  terrain_data.bin / terrain_meta.json) .gitignore ile haric.
+  Klonladiktan sonra arazinin gelmesi icin:
+    1. heightmap/yarimada_16bit.exr dosyanizi heightmap/ klasorune koyun.
+    2. main.tscn -> TerrainBaker node'u -> "CHUNK OLUSTUR" butonu.
+    3. "CHUNK OLUSTURMA TAMAM" -> terrain/terrain_data.bin +
+       terrain/terrain_meta.json olusur. Artik F5 ile arazi gelir.
+  (Zip ile gelen surumde bu dosyalar zaten HAZIRDIR.)
+
+
 NOTLAR
 ------
   - Renderer = Mobile (Project Settings).
-  - Chunk formati: ham half-float .bin (3.6 MB toplam).
+  - Chunk formati: ham 32-bit float (FORMAT_RF) .bin (~6.6 MB toplam).
   - Editor onizleme kasarsa: editor_preview_lod degerini 2 yapin.
 ==========================================================
