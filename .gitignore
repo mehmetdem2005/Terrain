@@ -1,13 +1,4 @@
-# Godot 4 editor cache
+# Sadece Godot editor onbellegi (makineye ozel, devasa) disarida.
+# Heightmap (.exr) ve bake verisi (terrain/*.bin, *.json) ARTIK repoda:
+# proje klonlandiginda bake'siz dogrudan F5 ile calisir.
 .godot/
-
-# TerrainBaker tarafindan uretilen veriler ("ARAZI HAZIRLA" butonu)
-# Kaynak: heightmap/*.exr -> terrain/height.bin + terrain/cdlod_meta.json
-/terrain/*.bin
-/terrain/*.json
-
-# Buyuk kaynak heightmap (depoya degil, yerelde tutulur)
-/heightmap/*.exr
-
-# Godot import metadata
-*.import
