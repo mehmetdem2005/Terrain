@@ -42,10 +42,12 @@ uniform sampler2D high_albedo   : source_color, filter_linear_mipmap, repeat_ena
 uniform sampler2D high_normal   : hint_normal,  filter_linear_mipmap, repeat_enable;
 uniform sampler2D detail_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D detail_normal : hint_normal,  filter_linear_mipmap, repeat_enable;
+uniform sampler2D rough_tex     : hint_roughness_r, filter_linear_mipmap, repeat_enable;
 
 uniform bool  albedo_on      = false;      // diffuse dokular atandi mi
 uniform bool  normal_on      = false;      // normal map'ler atandi mi
 uniform bool  detail_on      = false;      // detay katmani atandi mi
+uniform bool  rough_on       = false;      // roughness dokusu atandi mi
 uniform float tex_tiling     = 24.0;       // metre / doku tekrari
 uniform float detail_tiling  = 4.0;        // metre / detay tekrari
 uniform float detail_strength= 0.35;
@@ -144,6 +146,6 @@ void fragment() {
 	}
 
 	NORMAL = n;
-	ROUGHNESS = 1.0;
+	ROUGHNESS = rough_on ? texture(rough_tex, uvw).r : 1.0;
 	METALLIC = 0.0;
 }

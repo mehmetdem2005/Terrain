@@ -49,13 +49,16 @@ class_name TerrainChunkManager
 @export_group("Terrain Textures")
 ## Her yuvaya Inspector'dan doku dosyasi (png/jpg/exr...) surukle/sec.
 ## Hicbiri atanmazsa duz renk dolgusu kullanilir (eski gorunum).
-@export_subgroup("Alcak (cim/zemin)")
+## TEK DOKU yeterli: yalniz "Alcak" yuvalarini doldur, tum arazi onu
+## kullanir. Egim/Yuksek bos ise otomatik Alcak'a duser.
+@export_subgroup("Alcak (cim/zemin) - TEK DOKU icin yeterli")
 @export var low_albedo: Texture2D
 @export var low_normal: Texture2D
-@export_subgroup("Egim (kaya/yamac)")
+@export var low_rough: Texture2D
+@export_subgroup("Egim (kaya/yamac) - opsiyonel")
 @export var slope_albedo: Texture2D
 @export var slope_normal: Texture2D
-@export_subgroup("Yuksek (kar/zirve)")
+@export_subgroup("Yuksek (kar/zirve) - opsiyonel")
 @export var high_albedo: Texture2D
 @export var high_normal: Texture2D
 @export_subgroup("Detay (yakin zenginlik)")
@@ -368,20 +371,29 @@ func _set_static_uniforms(mat: ShaderMaterial) -> void:
 
 
 func _set_texture_uniforms(mat: ShaderMaterial) -> void:
-	var alb_on := low_albedo != null and slope_albedo != null and high_albedo != null
-	var nrm_on := low_normal != null and slope_normal != null and high_normal != null
+	# TEK DOKU modu: bos egim/yuksek yuvalari otomatik "low"a duser ->
+	# yalniz Alcak doldurunca tum arazi o tek dokuyu kullanir.
+	var s_alb: Texture2D = slope_albedo if slope_albedo != null else low_albedo
+	var h_alb: Texture2D = high_albedo if high_albedo != null else low_albedo
+	var s_nrm: Texture2D = slope_normal if slope_normal != null else low_normal
+	var h_nrm: Texture2D = high_normal if high_normal != null else low_normal
+	var alb_on := low_albedo != null
+	var nrm_on := low_normal != null
 	var det_on := detail_albedo != null
+	var rgh_on := low_rough != null
 	mat.set_shader_parameter("low_albedo", low_albedo)
 	mat.set_shader_parameter("low_normal", low_normal)
-	mat.set_shader_parameter("slope_albedo", slope_albedo)
-	mat.set_shader_parameter("slope_normal", slope_normal)
-	mat.set_shader_parameter("high_albedo", high_albedo)
-	mat.set_shader_parameter("high_normal", high_normal)
+	mat.set_shader_parameter("slope_albedo", s_alb)
+	mat.set_shader_parameter("slope_normal", s_nrm)
+	mat.set_shader_parameter("high_albedo", h_alb)
+	mat.set_shader_parameter("high_normal", h_nrm)
 	mat.set_shader_parameter("detail_albedo", detail_albedo)
 	mat.set_shader_parameter("detail_normal", detail_normal)
+	mat.set_shader_parameter("rough_tex", low_rough)
 	mat.set_shader_parameter("albedo_on", alb_on)
 	mat.set_shader_parameter("normal_on", nrm_on)
 	mat.set_shader_parameter("detail_on", det_on)
+	mat.set_shader_parameter("rough_on", rgh_on)
 	mat.set_shader_parameter("tex_tiling", tex_tiling)
 	mat.set_shader_parameter("detail_tiling", detail_tiling)
 	mat.set_shader_parameter("detail_strength", detail_strength)
