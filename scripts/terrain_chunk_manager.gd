@@ -34,6 +34,9 @@ class_name TerrainChunkManager
 @export var morph_start_ratio: float = 0.72
 ## Havuz ust siniri (ayni anda cizilebilecek blok)
 @export var max_nodes: int = 1024
+## LOD gecisindeki ince cizgi/kesikleri kapatan blok kenar perdesi (m).
+## 0 = kapali. 2-5 m genelde gorunmez ve dikisleri yok eder.
+@export var skirt: float = 3.0
 
 @export_group("Collision")
 @export var enable_collision: bool = true
@@ -367,6 +370,7 @@ func _set_static_uniforms(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("height_offset", height_offset)
 	mat.set_shader_parameter("hr", float(_hr))
 	mat.set_shader_parameter("grid_cells", float(_leaf_grid))
+	mat.set_shader_parameter("skirt", skirt)
 	_set_texture_uniforms(mat)
 
 

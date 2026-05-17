@@ -27,6 +27,7 @@ uniform float morph_end      = 300.0;
 uniform float grid_cells     = 32.0;       // mesh kenar hucre sayisi
 
 uniform vec3  cam_pos        = vec3(0.0);
+uniform float skirt          = 0.0;        // blok kenarinda asagi inis (m)
 
 // --- duz renk dolgusu (doku yoksa) ---
 uniform vec3 low_color  : source_color = vec3(0.34, 0.46, 0.22);
@@ -57,7 +58,8 @@ uniform float slope_start    = 0.35;       // egim karisim esikleri
 uniform float slope_end      = 0.70;
 uniform float normal_strength= 1.0;
 
-varying vec2 v_uv;
+varying vec2 v_uv;       // morf'lanmis (geometri) - texture icin
+varying vec2 v_uv_geo;   // MORF'SUZ gercek konum - normal/aydinlatma icin
 varying vec3 v_wpos;
 
 float sample_raw(vec2 uv) {
@@ -82,8 +84,17 @@ void vertex() {
 	vec2 uv  = (w - world_min) / world_size;
 	float h  = sample_raw(uv) * height_scale + height_offset;
 
+	// blok kenari: kucuk dikey perde -> LOD gecisindeki minik bosluklari
+	// kapatir (komsu bloklar ayni cizgide ayni miktarda iner -> gorunmez).
+	bool on_edge = gp.x <= 0.00001 || gp.x >= 0.99999
+				|| gp.y <= 0.00001 || gp.y >= 0.99999;
+	if (on_edge) {
+		h -= skirt;
+	}
+
 	VERTEX = vec3(w.x, h, w.y);
 	v_uv = uv;
+	v_uv_geo = uv0;          // morf'suz -> normal her blokta ayni -> dikis YOK
 	v_wpos = VERTEX;
 }
 
@@ -100,13 +111,13 @@ vec3 apply_nmap(vec3 n, vec3 nm, float k) {
 void fragment() {
 	float t  = 1.0 / (hr - 1.0);                    // 1 texel (uv)
 	float ws = world_size / (hr - 1.0);             // 1 texel (metre)
-	float hL = sample_raw(v_uv - vec2(t, 0.0)) * height_scale;
-	float hR = sample_raw(v_uv + vec2(t, 0.0)) * height_scale;
-	float hD = sample_raw(v_uv - vec2(0.0, t)) * height_scale;
-	float hU = sample_raw(v_uv + vec2(0.0, t)) * height_scale;
+	float hL = sample_raw(v_uv_geo - vec2(t, 0.0)) * height_scale;
+	float hR = sample_raw(v_uv_geo + vec2(t, 0.0)) * height_scale;
+	float hD = sample_raw(v_uv_geo - vec2(0.0, t)) * height_scale;
+	float hU = sample_raw(v_uv_geo + vec2(0.0, t)) * height_scale;
 	vec3 n = normalize(vec3(hL - hR, 2.0 * ws, hD - hU));
 
-	float h01   = sample_raw(v_uv);
+	float h01   = sample_raw(v_uv_geo);
 	float slope = 1.0 - clamp(n.y, 0.0, 1.0);
 
 	// karisim agirliklari: yukseklik (alcak<->yuksek), uzerine egim (kaya)
