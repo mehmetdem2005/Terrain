@@ -276,7 +276,9 @@ func _build_grid_mesh(subdiv: int, skirt: float) -> ArrayMesh:
 			var b := a + 1
 			var c := a + n
 			var d := c + 1
-			idx.append_array([a, c, b, b, c, d])
+			# DUZELTME: ana grid sarim yonu cull_back ile ust yuzey gorunecek
+			# sekilde (onceki [a,c,b,b,c,d] tersti -> tum yuzey eleniyordu).
+			idx.append_array([a, b, c, b, d, c])
 
 	# --- skirt (kenar duvari, gizli oldugu icin cift tarafli) ---
 	if skirt > 0.0:
