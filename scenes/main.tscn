@@ -1,10 +1,13 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://scripts/terrain_chunk_manager.gd" id="1_mgr"]
 [ext_resource type="Shader" path="res://terrain/terrain_displacement.gdshader" id="2_shd"]
 [ext_resource type="Script" path="res://scripts/terrain_baker.gd" id="4_bake"]
 [ext_resource type="Script" path="res://scripts/player.gd" id="5_ply"]
 [ext_resource type="Script" path="res://scripts/virtual_joystick.gd" id="6_joy"]
+[ext_resource type="Texture2D" uid="uid://cpbjashj7n4ry" path="res://textures/forrest_ground_01_diff_1k.png" id="7_alb"]
+[ext_resource type="Texture2D" uid="uid://kqbdtsn2nxem" path="res://textures/forrest_ground_01_nor_gl_1k.png" id="8_nrm"]
+[ext_resource type="Texture2D" uid="uid://dm00pkyfpwocs" path="res://textures/forrest_ground_01_rough_1k.png" id="9_rgh"]
 
 [sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
 sky_top_color = Color(0.38, 0.55, 0.78, 1)
@@ -55,6 +58,10 @@ enable_collision = true
 collision_window = 129
 collision_rebuild_dist = 24.0
 terrain_shader = ExtResource("2_shd")
+low_albedo = ExtResource("7_alb")
+low_normal = ExtResource("8_nrm")
+low_rough = ExtResource("9_rgh")
+tex_tiling = 8.0
 show_in_editor = true
 editor_preview_level = 3
 verbose_log = true
