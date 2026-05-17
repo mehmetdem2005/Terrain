@@ -1,10 +1,10 @@
 # Godot 4 editor cache
 .godot/
 
-# TerrainBaker tarafindan uretilen veriler ("CHUNK OLUSTUR" butonu)
-# Kaynak: heightmap/*.exr -> terrain/terrain_data.bin + terrain/terrain_meta.json
-/terrain/terrain_data.bin
-/terrain/terrain_meta.json
+# TerrainBaker tarafindan uretilen veriler ("ARAZI HAZIRLA" butonu)
+# Kaynak: heightmap/*.exr -> terrain/height.bin + terrain/cdlod_meta.json
+/terrain/*.bin
+/terrain/*.json
 
 # Buyuk kaynak heightmap (depoya degil, yerelde tutulur)
 /heightmap/*.exr
