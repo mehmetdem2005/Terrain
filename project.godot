@@ -1,0 +1,22 @@
+; Godot 4.6 - Fare Simulatoru Terrain projesi
+; Engine yapilandirma dosyasi
+
+config_version=5
+
+[application]
+
+config/name="Fare Simulatoru Terrain"
+config/description="EXR heightmap tabanli chunk + LOD + collision arazi sistemi"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6", "Mobile")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+textures/vram_compression/import_etc2_astc=true

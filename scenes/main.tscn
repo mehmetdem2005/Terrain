@@ -1,0 +1,64 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/terrain_chunk_manager.gd" id="1_mgr"]
+[ext_resource type="Shader" path="res://terrain/terrain_displacement.gdshader" id="2_shd"]
+[ext_resource type="Script" path="res://scripts/fly_camera.gd" id="3_cam"]
+[ext_resource type="Script" path="res://scripts/terrain_baker.gd" id="4_bake"]
+
+[sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
+sky_top_color = Color(0.38, 0.55, 0.78, 1)
+sky_horizon_color = Color(0.72, 0.79, 0.82, 1)
+ground_bottom_color = Color(0.24, 0.26, 0.23, 1)
+ground_horizon_color = Color(0.72, 0.79, 0.82, 1)
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("Sky_mat")
+
+[sub_resource type="Environment" id="Env"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+ambient_light_color = Color(0.62, 0.67, 0.72, 1)
+ambient_light_energy = 0.45
+tonemap_mode = 2
+fog_enabled = true
+fog_light_color = Color(0.72, 0.79, 0.82, 1)
+fog_density = 0.0015
+
+[node name="Main" type="Node3D"]
+
+[node name="TerrainChunkManager" type="Node3D" parent="."]
+script = ExtResource("1_mgr")
+data_file = "res://terrain/terrain_data.bin"
+meta_file = "res://terrain/terrain_meta.json"
+target_path = NodePath("../FlyCamera")
+texel_size = 1.0
+height_scale = 120.0
+auto_center = true
+show_in_editor = true
+editor_preview_lod = 1
+load_radius = 4
+unload_radius = 6
+terrain_shader = ExtResource("2_shd")
+verbose_log = true
+
+[node name="TerrainBaker" type="Node" parent="."]
+script = ExtResource("4_bake")
+source_exr = "res://heightmap/yarimada_16bit.exr"
+data_file = "res://terrain/terrain_data.bin"
+meta_file = "res://terrain/terrain_meta.json"
+target_size = 1280
+chunk_size = 128
+
+[node name="FlyCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.866025, -0.5, 0, 0.5, 0.866025, 0, 70, 90)
+current = true
+far = 2000.0
+script = ExtResource("3_cam")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 200, 0)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env")
