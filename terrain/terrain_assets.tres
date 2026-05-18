@@ -1,0 +1,13 @@
+[gd_resource type="Terrain3DAssets" format=3]
+
+[ext_resource type="Texture2D" path="res://textures/forrest_ground_01_diff_1k.png" id="1_tk2ly"]
+[ext_resource type="Texture2D" path="res://textures/forrest_ground_01_nor_gl_1k.png" id="2_nou1c"]
+
+[sub_resource type="Terrain3DTextureAsset" id="Terrain3DTextureAsset_hxkb6"]
+name = "ground"
+albedo_texture = ExtResource("1_tk2ly")
+normal_texture = ExtResource("2_nou1c")
+ao_strength = 0.6
+
+[resource]
+texture_list = Array[Terrain3DTextureAsset]([SubResource("Terrain3DTextureAsset_hxkb6")])
