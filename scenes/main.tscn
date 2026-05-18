@@ -66,7 +66,7 @@ script = ExtResource("4_bake")
 source_exr = "res://heightmap/yarimada_16bit.exr"
 height_file = "res://terrain/height.bin"
 meta_file = "res://terrain/cdlod_meta.json"
-lod_levels = 7
+lod_levels = 8
 leaf_grid = 32
 
 [node name="Player" type="CharacterBody3D" parent="."]
