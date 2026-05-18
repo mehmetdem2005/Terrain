@@ -67,7 +67,7 @@ uniform sampler2D hole_tex   : filter_linear, repeat_disable;
 
 varying vec2 v_uv;       // morf'lanmis (geometri)
 varying vec2 v_uv_geo;   // MORF'SUZ -> normal/aydinlatma (dikis YOK)
-varying vec3 v_wpos;
+varying vec2 v_wxz;      // MORF'SUZ dunya XZ -> doku/splat/delik (kayma YOK)
 
 float sample_raw(vec2 uv) {
 	return textureLod(height_tex, clamp(uv, 0.0, 1.0), 0.0).r;
@@ -93,7 +93,7 @@ void vertex() {
 	VERTEX = vec3(w.x, h, w.y);
 	v_uv = uv;
 	v_uv_geo = uv0;
-	v_wpos = VERTEX;
+	v_wxz = w0;          // MORF'SUZ -> doku LOD geciste KAYMAZ
 }
 
 vec3 apply_nmap(vec3 n, vec3 nm, float k) {
@@ -107,7 +107,7 @@ vec3 apply_nmap(vec3 n, vec3 nm, float k) {
 
 void fragment() {
 	if (hole_on) {
-		vec2 huv = clamp((v_wpos.xz - world_min) / world_size, 0.0, 1.0);
+		vec2 huv = clamp((v_wxz - world_min) / world_size, 0.0, 1.0);
 		if (texture(hole_tex, huv).r < 0.5) discard;
 	}
 
@@ -122,10 +122,10 @@ void fragment() {
 	float h01   = sample_raw(v_uv_geo);
 	float slope = 1.0 - clamp(n.y, 0.0, 1.0);
 
-	vec2 uvw = v_wpos.xz / max(tex_tiling, 0.001);
+	vec2 uvw = v_wxz / max(tex_tiling, 0.001);
 
 	if (splat_on && layer_albedo_on) {
-		vec2 suv = clamp((v_wpos.xz - world_min) / world_size, 0.0, 1.0);
+		vec2 suv = clamp((v_wxz - world_min) / world_size, 0.0, 1.0);
 		vec4 si = texture(splat_idx, suv);
 		vec4 sw = texture(splat_w, suv);
 		float wsum = sw.r + sw.g + sw.b + sw.a;

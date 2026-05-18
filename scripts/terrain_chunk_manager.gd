@@ -656,6 +656,40 @@ func _clear_editor_preview() -> void:
 #  edit_refresh_gpu ile gorsele yansir, edit_save ile diske yazilir.
 enum {EDIT_RAISE, EDIT_LOWER, EDIT_SMOOTH, EDIT_FLATTEN}
 
+# Terrain3D benzeri firca sekilleri. d01 = 0 merkez .. 1 kenar.
+#  0 Yumusak  : yumusak kenar (smoothstep) - varsayilan
+#  1 Sert     : dar/keskin koni (guclu merkez)
+#  2 Duz      : sabit disk (sert kenar) - plato/yol
+#  3 Halka    : kenarda tepe (krater/siddet halkasi)
+#  4 Gurultu  : organik dagilim (dogal arazi/kayalik)
+const BRUSH_SOFT := 0
+const BRUSH_SHARP := 1
+const BRUSH_FLAT := 2
+const BRUSH_RING := 3
+const BRUSH_NOISE := 4
+
+
+func _hash2(x: int, y: int) -> float:
+	var n := (x * 73856093) ^ (y * 19349663)
+	return float(n & 0xffff) / 65535.0
+
+
+func _falloff(d01: float, brush: int, x: int, y: int) -> float:
+	if d01 >= 1.0:
+		return 0.0
+	match brush:
+		BRUSH_SHARP:
+			var c := clampf(1.0 - d01, 0.0, 1.0)
+			return c * c
+		BRUSH_FLAT:
+			return 1.0 if d01 < 0.9 else smoothstep(1.0, 0.9, d01)
+		BRUSH_RING:
+			var k := (d01 - 0.62) / 0.2
+			return clampf(exp(-k * k), 0.0, 1.0)
+		BRUSH_NOISE:
+			return smoothstep(1.0, 0.0, d01) * (0.3 + 0.7 * _hash2(x, y))
+	return smoothstep(1.0, 0.0, d01)   # BRUSH_SOFT
+
 
 func edit_ensure() -> bool:
 	if _height_img != null:
@@ -721,7 +755,7 @@ func edit_paste_region(r: Rect2i, data: PackedFloat32Array) -> void:
 ## Tek fircha vurusu. cx,cy = texel merkez, r_tex = texel yaricap.
 ## amount = ham yukseklik (0..1) basina degisim. Etkilenen Rect2i doner.
 func edit_apply_dab(cx: float, cy: float, r_tex: float, amount: float,
-		mode: int, target: float) -> Rect2i:
+		mode: int, target: float, brush: int = 0) -> Rect2i:
 	var ri := int(ceil(r_tex)) + 1
 	var x0 := clampi(int(cx) - ri, 0, _hr - 1)
 	var y0 := clampi(int(cy) - ri, 0, _hr - 1)
@@ -736,7 +770,9 @@ func edit_apply_dab(cx: float, cy: float, r_tex: float, amount: float,
 			var dist := sqrt(dx * dx + dy * dy) / maxf(r_tex, 0.001)
 			if dist >= 1.0:
 				continue
-			var fall := smoothstep(1.0, 0.0, dist)
+			var fall := _falloff(dist, brush, x, y)
+			if fall <= 0.0:
+				continue
 			var h := _height_img.get_pixel(x, y).r
 			match mode:
 				EDIT_RAISE:
@@ -904,7 +940,7 @@ func edit_splat_set_packed(x: int, y: int, ip: int, wp: int) -> void:
 ## Tek firca vurusu (boya). cx,cy splat texel merkez, r_px texel yaricap,
 ## strength 0..1, layer = secili zemin indeksi. Etkilenen Rect2i doner.
 func edit_apply_dab_splat(cx: float, cy: float, r_px: float,
-		strength: float, layer: int) -> Rect2i:
+		strength: float, layer: int, brush: int = 0) -> Rect2i:
 	var s := edit_splat_size()
 	var ri := int(ceil(r_px)) + 1
 	var x0 := clampi(int(cx) - ri, 0, s - 1)
@@ -924,7 +960,7 @@ func edit_apply_dab_splat(cx: float, cy: float, r_px: float,
 			var dist := sqrt(dx * dx + dy * dy) / maxf(r_px, 0.001)
 			if dist >= 1.0:
 				continue
-			var add := strength * smoothstep(1.0, 0.0, dist)
+			var add := strength * _falloff(dist, brush, x, y)
 			if add <= 0.0:
 				continue
 			var ci := _splat_idx_img.get_pixel(x, y)
@@ -1040,7 +1076,7 @@ func edit_hole_get(x: int, y: int) -> float:
 ## Tek firca vurusu. open=true -> delik ac (0), false -> kapat (1).
 ## Sert kenar (shader 0.5 esikli) -> ongorulebilir magara/ucurum agzi.
 func edit_apply_dab_hole(cx: float, cy: float, r_px: float,
-		open: bool) -> Rect2i:
+		open: bool, brush: int = 0) -> Rect2i:
 	var s := edit_hole_size()
 	var ri := int(ceil(r_px)) + 1
 	var x0 := clampi(int(cx) - ri, 0, s - 1)
@@ -1055,7 +1091,8 @@ func edit_apply_dab_hole(cx: float, cy: float, r_px: float,
 		for x in range(x0, x1 + 1):
 			var dx := float(x) - cx
 			var dy := float(y) - cy
-			if sqrt(dx * dx + dy * dy) >= r_px:
+			var dist := sqrt(dx * dx + dy * dy) / maxf(r_px, 0.001)
+			if _falloff(dist, brush, x, y) < 0.5:
 				continue
 			_hole_img.set_pixel(x, y, col)
 	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
