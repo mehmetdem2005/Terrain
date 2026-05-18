@@ -656,17 +656,30 @@ func _clear_editor_preview() -> void:
 #  edit_refresh_gpu ile gorsele yansir, edit_save ile diske yazilir.
 enum {EDIT_RAISE, EDIT_LOWER, EDIT_SMOOTH, EDIT_FLATTEN}
 
-# Terrain3D benzeri firca sekilleri. d01 = 0 merkez .. 1 kenar.
+# Terrain3D benzeri firca sekilleri. nx,ny = merkeze gore [-1..1] ofset.
 #  0 Yumusak  : yumusak kenar (smoothstep) - varsayilan
 #  1 Sert     : dar/keskin koni (guclu merkez)
 #  2 Duz      : sabit disk (sert kenar) - plato/yol
 #  3 Halka    : kenarda tepe (krater/siddet halkasi)
 #  4 Gurultu  : organik dagilim (dogal arazi/kayalik)
+#  5 Dogrusal : duz koni (1-d) - tahmin edilebilir egim
+#  6 Gauss    : can egrisi - cok yumusak harman
+#  7 Kare     : kare ayak izi - yol/plato/teras
+#  8 Yildiz   : yildiz ayak izi - dekoratif/krater
+#  9 Serpme   : seyrek serpme - cakil/bitki dagilimi
+# 10 Damga    : tam guc sert disk - net stamp/maske
 const BRUSH_SOFT := 0
 const BRUSH_SHARP := 1
 const BRUSH_FLAT := 2
 const BRUSH_RING := 3
 const BRUSH_NOISE := 4
+const BRUSH_LINEAR := 5
+const BRUSH_GAUSS := 6
+const BRUSH_SQUARE := 7
+const BRUSH_STAR := 8
+const BRUSH_SCATTER := 9
+const BRUSH_STAMP := 10
+const BRUSH_COUNT := 11
 
 
 func _hash2(x: int, y: int) -> float:
@@ -674,21 +687,50 @@ func _hash2(x: int, y: int) -> float:
 	return float(n & 0xffff) / 65535.0
 
 
-func _falloff(d01: float, brush: int, x: int, y: int) -> float:
-	if d01 >= 1.0:
-		return 0.0
+func _falloff(nx: float, ny: float, brush: int, x: int, y: int) -> float:
+	var d := sqrt(nx * nx + ny * ny)
 	match brush:
 		BRUSH_SHARP:
-			var c := clampf(1.0 - d01, 0.0, 1.0)
+			if d >= 1.0:
+				return 0.0
+			var c := 1.0 - d
 			return c * c
 		BRUSH_FLAT:
-			return 1.0 if d01 < 0.9 else smoothstep(1.0, 0.9, d01)
+			if d >= 1.0:
+				return 0.0
+			return 1.0 if d < 0.9 else smoothstep(1.0, 0.9, d)
 		BRUSH_RING:
-			var k := (d01 - 0.62) / 0.2
+			if d >= 1.0:
+				return 0.0
+			var k := (d - 0.62) / 0.2
 			return clampf(exp(-k * k), 0.0, 1.0)
 		BRUSH_NOISE:
-			return smoothstep(1.0, 0.0, d01) * (0.3 + 0.7 * _hash2(x, y))
-	return smoothstep(1.0, 0.0, d01)   # BRUSH_SOFT
+			if d >= 1.0:
+				return 0.0
+			return smoothstep(1.0, 0.0, d) * (0.3 + 0.7 * _hash2(x, y))
+		BRUSH_LINEAR:
+			return clampf(1.0 - d, 0.0, 1.0)
+		BRUSH_GAUSS:
+			return clampf(exp(-d * d * 4.0) - 0.018, 0.0, 1.0)
+		BRUSH_SQUARE:
+			var ch := maxf(absf(nx), absf(ny))
+			return 1.0 - smoothstep(0.82, 1.0, ch)
+		BRUSH_STAR:
+			if d >= 1.0:
+				return 0.0
+			var ang := atan2(ny, nx)
+			var lobe := 0.5 + 0.5 * cos(ang * 5.0)
+			var rad := 0.45 + 0.55 * pow(lobe, 1.5)
+			return smoothstep(rad, rad * 0.55, d)
+		BRUSH_SCATTER:
+			if d >= 1.0:
+				return 0.0
+			if _hash2(x, y) < 0.78:
+				return 0.0
+			return smoothstep(1.0, 0.0, d)
+		BRUSH_STAMP:
+			return 1.0 if d < 1.0 else 0.0
+	return smoothstep(1.0, 0.0, d)   # BRUSH_SOFT
 
 
 func edit_ensure() -> bool:
@@ -765,12 +807,9 @@ func edit_apply_dab(cx: float, cy: float, r_tex: float, amount: float,
 		return Rect2i(0, 0, 0, 0)
 	for y in range(y0, y1 + 1):
 		for x in range(x0, x1 + 1):
-			var dx := float(x) - cx
-			var dy := float(y) - cy
-			var dist := sqrt(dx * dx + dy * dy) / maxf(r_tex, 0.001)
-			if dist >= 1.0:
-				continue
-			var fall := _falloff(dist, brush, x, y)
+			var nx := (float(x) - cx) / maxf(r_tex, 0.001)
+			var ny := (float(y) - cy) / maxf(r_tex, 0.001)
+			var fall := _falloff(nx, ny, brush, x, y)
 			if fall <= 0.0:
 				continue
 			var h := _height_img.get_pixel(x, y).r
@@ -955,12 +994,9 @@ func edit_apply_dab_splat(cx: float, cy: float, r_px: float,
 	var ws := PackedFloat32Array([0, 0, 0, 0])
 	for y in range(y0, y1 + 1):
 		for x in range(x0, x1 + 1):
-			var dx := float(x) - cx
-			var dy := float(y) - cy
-			var dist := sqrt(dx * dx + dy * dy) / maxf(r_px, 0.001)
-			if dist >= 1.0:
-				continue
-			var add := strength * _falloff(dist, brush, x, y)
+			var nx := (float(x) - cx) / maxf(r_px, 0.001)
+			var ny := (float(y) - cy) / maxf(r_px, 0.001)
+			var add := strength * _falloff(nx, ny, brush, x, y)
 			if add <= 0.0:
 				continue
 			var ci := _splat_idx_img.get_pixel(x, y)
@@ -1089,10 +1125,9 @@ func edit_apply_dab_hole(cx: float, cy: float, r_px: float,
 	var col := Color(v, v, v)
 	for y in range(y0, y1 + 1):
 		for x in range(x0, x1 + 1):
-			var dx := float(x) - cx
-			var dy := float(y) - cy
-			var dist := sqrt(dx * dx + dy * dy) / maxf(r_px, 0.001)
-			if _falloff(dist, brush, x, y) < 0.5:
+			var nx := (float(x) - cx) / maxf(r_px, 0.001)
+			var ny := (float(y) - cy) / maxf(r_px, 0.001)
+			if _falloff(nx, ny, brush, x, y) < 0.5:
 				continue
 			_hole_img.set_pixel(x, y, col)
 	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)

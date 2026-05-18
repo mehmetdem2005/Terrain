@@ -204,7 +204,8 @@ func _build_bottombar() -> void:
 	row.add_child(_mode_row)
 
 	_brush_row = _opt_row("Firca",
-		["Yumusak", "Sert", "Duz", "Halka", "Gurultu"],
+		["Yumusak", "Sert", "Duz", "Halka", "Gurultu",
+		"Dogrusal", "Gauss", "Kare", "Yildiz", "Serpme", "Damga"],
 		func(i): _brush = i; update_overlays())
 	row.add_child(_brush_row)
 
@@ -313,7 +314,9 @@ func _refresh_status() -> void:
 		tl = "Boya z%d" % _layer
 	elif _tool == 2:
 		tl = "Delik " + ("ac" if _hole_open else "kapat")
-	var bn: String = ["Yumusak", "Sert", "Duz", "Halka", "Gurultu"][clampi(_brush, 0, 4)]
+	var bn: String = ["Yumusak", "Sert", "Duz", "Halka", "Gurultu",
+		"Dogrusal", "Gauss", "Kare", "Yildiz", "Serpme",
+		"Damga"][clampi(_brush, 0, 10)]
 	var hint := ""
 	if not has:
 		hint = "\nSahneyi ac: scenes/main.tscn + 3B sekmesi"
@@ -364,7 +367,8 @@ func _forward_3d_draw_over_viewport(overlay: Control) -> void:
 	overlay.draw_arc(c, px, 0.0, TAU, 72, RING_BG, 5.0, true)
 	overlay.draw_arc(c, px, 0.0, TAU, 72, RING_COL, 2.0, true)
 	# ic halka = firca cekirdegi (etkili merkez) -> sekli gosterir
-	var core: float = [0.5, 0.32, 0.9, 0.62, 0.5][clampi(_brush, 0, 4)]
+	var core: float = [0.5, 0.32, 0.9, 0.62, 0.5,
+		0.4, 0.42, 0.85, 0.5, 0.5, 0.95][clampi(_brush, 0, 10)]
 	var inner: Color = RING_COL
 	inner.a = 0.45
 	overlay.draw_arc(c, px * core, 0.0, TAU, 56, inner, 1.5, true)
