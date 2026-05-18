@@ -35,7 +35,8 @@ data_directory = "res://terrain/terrain_data"
 material = ExtResource("2_mat")
 assets = ExtResource("3_ast")
 vertex_spacing = 4.0861930847168
-mesh_lods = 5
+mesh_lods = 4
+cast_shadows = 0
 
 [node name="Player" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 400, 0)
