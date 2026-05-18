@@ -482,3 +482,198 @@ func _clear_editor_preview() -> void:
 	for ch in get_children():
 		if ch is MeshInstance3D and ch.name.begins_with("preview_"):
 			ch.queue_free()
+
+
+# === SCULPT/EDIT API (yalniz editor eklentisi kullanir) ==============
+#  Mevcut runtime mantigi etkilenmez. Veri _height_img uzerinde duzenlenir,
+#  edit_refresh_gpu ile gorsele yansir, edit_save ile diske yazilir.
+enum {EDIT_RAISE, EDIT_LOWER, EDIT_SMOOTH, EDIT_FLATTEN}
+
+
+func edit_ensure() -> bool:
+	if _height_img != null:
+		return true
+	return _init_common()
+
+
+func edit_hr() -> int:
+	return _hr
+
+
+## Dunya XZ -> kesirli texel kordinati
+func edit_world_to_texel(wx: float, wz: float) -> Vector2:
+	var u := (wx - _world_min.x) / world_size
+	var v := (wz - _world_min.y) / world_size
+	return Vector2(u * float(_hr - 1), v * float(_hr - 1))
+
+
+## Isin (origin,dir) ile arazi kesisimi. {hit:bool, pos:Vector3}
+func edit_raycast(origin: Vector3, dir: Vector3, max_dist: float = 20000.0) -> Dictionary:
+	if not edit_ensure():
+		return {"hit": false}
+	var step := maxf(world_size / float(_hr - 1), 1.0)
+	var t := 0.0
+	var prev := origin.y - get_terrain_height(origin.x, origin.z)
+	while t < max_dist:
+		t += step
+		var p := origin + dir * t
+		var d := p.y - get_terrain_height(p.x, p.z)
+		if d <= 0.0 and prev > 0.0:
+			# ikili arama ile incelt
+			var lo := t - step
+			var hi := t
+			for _i in 12:
+				var mid := (lo + hi) * 0.5
+				var pm := origin + dir * mid
+				if pm.y - get_terrain_height(pm.x, pm.z) > 0.0:
+					lo = mid
+				else:
+					hi = mid
+			var hp := origin + dir * hi
+			return {"hit": true, "pos": Vector3(hp.x, get_terrain_height(hp.x, hp.z), hp.z)}
+		prev = d
+	return {"hit": false}
+
+
+func edit_copy_region(r: Rect2i) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(r.size.x * r.size.y)
+	for y in r.size.y:
+		for x in r.size.x:
+			out[y * r.size.x + x] = _height_img.get_pixel(r.position.x + x, r.position.y + y).r
+	return out
+
+
+func edit_paste_region(r: Rect2i, data: PackedFloat32Array) -> void:
+	for y in r.size.y:
+		for x in r.size.x:
+			var v := data[y * r.size.x + x]
+			_height_img.set_pixel(r.position.x + x, r.position.y + y, Color(v, v, v))
+
+
+## Tek fircha vurusu. cx,cy = texel merkez, r_tex = texel yaricap.
+## amount = ham yukseklik (0..1) basina degisim. Etkilenen Rect2i doner.
+func edit_apply_dab(cx: float, cy: float, r_tex: float, amount: float,
+		mode: int, target: float) -> Rect2i:
+	var ri := int(ceil(r_tex)) + 1
+	var x0 := clampi(int(cx) - ri, 0, _hr - 1)
+	var y0 := clampi(int(cy) - ri, 0, _hr - 1)
+	var x1 := clampi(int(cx) + ri, 0, _hr - 1)
+	var y1 := clampi(int(cy) + ri, 0, _hr - 1)
+	if x1 < x0 or y1 < y0:
+		return Rect2i(0, 0, 0, 0)
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var dx := float(x) - cx
+			var dy := float(y) - cy
+			var dist := sqrt(dx * dx + dy * dy) / maxf(r_tex, 0.001)
+			if dist >= 1.0:
+				continue
+			var fall := smoothstep(1.0, 0.0, dist)
+			var h := _height_img.get_pixel(x, y).r
+			match mode:
+				EDIT_RAISE:
+					h += amount * fall
+				EDIT_LOWER:
+					h -= amount * fall
+				EDIT_FLATTEN:
+					h = lerpf(h, target, clampf(amount * 8.0, 0.0, 1.0) * fall)
+				EDIT_SMOOTH:
+					var ax := clampi(x, 1, _hr - 2)
+					var ay := clampi(y, 1, _hr - 2)
+					var avg := (_height_img.get_pixel(ax - 1, ay).r
+							+ _height_img.get_pixel(ax + 1, ay).r
+							+ _height_img.get_pixel(ax, ay - 1).r
+							+ _height_img.get_pixel(ax, ay + 1).r
+							+ h) * 0.2
+					h = lerpf(h, avg, clampf(amount * 8.0, 0.0, 1.0) * fall)
+			h = clampf(h, 0.0, 1.0)
+			_height_img.set_pixel(x, y, Color(h, h, h))
+	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+
+## Merkez texeldeki ham yukseklik (flatten hedefi icin)
+func edit_sample_raw(cx: int, cy: int) -> float:
+	cx = clampi(cx, 0, _hr - 1)
+	cy = clampi(cy, 0, _hr - 1)
+	return _height_img.get_pixel(cx, cy).r
+
+
+## Index listesine gore toplu geri-yazma (undo icin hizli)
+func edit_scatter(idx: PackedInt32Array, val: PackedFloat32Array) -> void:
+	for i in idx.size():
+		var k := idx[i]
+		@warning_ignore("integer_division")
+		var y := k / _hr
+		var x := k % _hr
+		var v := val[i]
+		_height_img.set_pixel(x, y, Color(v, v, v))
+
+
+## Duzenlemeyi GPU dokusuna yansit (hizli; piramit yalniz edit_save'de)
+func edit_refresh_gpu() -> void:
+	if _height_tex != null:
+		_height_tex.update(_height_img)
+
+
+func edit_rebuild_pyramid() -> void:
+	@warning_ignore("integer_division")
+	var cell := (_hr - 1) / _leaves
+	var lm := []
+	for ly in _leaves:
+		for lx in _leaves:
+			var c_min := INF
+			var c_max := -INF
+			var bx := lx * cell
+			var by := ly * cell
+			for yy in range(by, by + cell + 1):
+				for xx in range(bx, bx + cell + 1):
+					var h := _height_img.get_pixel(xx, yy).r
+					c_min = minf(c_min, h)
+					c_max = maxf(c_max, h)
+			lm.append({"min": c_min, "max": c_max})
+	_build_pyramid(lm)
+
+
+## height.bin + cdlod_meta.json diske yaz
+func edit_save() -> bool:
+	if _height_img == null:
+		return false
+	var hf := FileAccess.open(height_file, FileAccess.WRITE)
+	if hf == null:
+		push_error("[CDLOD] edit_save: height yazilamadi")
+		return false
+	hf.store_buffer(_height_img.get_data())
+	hf.close()
+	@warning_ignore("integer_division")
+	var cell := (_hr - 1) / _leaves
+	var g_min := INF
+	var g_max := -INF
+	var lm := []
+	for ly in _leaves:
+		for lx in _leaves:
+			var c_min := INF
+			var c_max := -INF
+			var bx := lx * cell
+			var by := ly * cell
+			for yy in range(by, by + cell + 1):
+				for xx in range(bx, bx + cell + 1):
+					var h := _height_img.get_pixel(xx, yy).r
+					c_min = minf(c_min, h)
+					c_max = maxf(c_max, h)
+			lm.append({"min": c_min, "max": c_max})
+			g_min = minf(g_min, c_min)
+			g_max = maxf(g_max, c_max)
+	var meta := {
+		"hr": _hr, "leaves": _leaves, "leaf_grid": _leaf_grid,
+		"lod_levels": _lod_levels, "format": "rf",
+		"data_min": g_min, "data_max": g_max, "leaf_minmax": lm,
+	}
+	var mf := FileAccess.open(meta_file, FileAccess.WRITE)
+	if mf == null:
+		push_error("[CDLOD] edit_save: meta yazilamadi")
+		return false
+	mf.store_string(JSON.stringify(meta))
+	mf.close()
+	_build_pyramid(lm)
+	return true
