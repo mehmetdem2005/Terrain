@@ -4,128 +4,264 @@ extends EditorPlugin
 #  TERRAIN TOOLS
 #   Faz 1A: dokunmatik heightmap sculpt + kaydet + undo
 #   Faz 1B: doku boyama (SINIRSIZ zemin, indeksli splat) + kaydet + undo
+#   Faz 1C: delik (hole) maskesi + kaydet + undo
+#   Faz 1D: Terrain3D benzeri UX -> 3B gorunum kenarinda buyuk dokunmatik
+#           arac cubugu + alt bar + EKRANDA FIRCA HALKASI + giris duzeltme
 #  Godot editoru (telefon dahil) icinde calisir. Mevcut CDLOD/runtime
 #  kodu DEGISMEZ; veri TerrainChunkManager.edit_* API'si uzerinden
-#  duzenlenir.
+#  duzenlenir (yalniz editor-only).
 # =====================================================================
 
-var _panel: VBoxContainer
+const MIN_BTN := Vector2(118, 46)        # parmak-dostu minimum
+const RING_COL := Color(1.0, 0.85, 0.15, 0.95)
+const RING_BG := Color(0.0, 0.0, 0.0, 0.55)
+
+var _toolbar: VBoxContainer              # 3B sol kenar
+var _bottombar: PanelContainer           # 3B alt
 var _active := false
-var _tool := 0          # 0 Heykel (sculpt)  1 Boya (paint)  2 Delik (hole)
+var _tool := 0          # 0 Heykel  1 Boya  2 Delik
 var _mode := 0          # sculpt: 0 raise 1 lower 2 smooth 3 flatten
 var _layer := 0         # boya: secili zemin indeksi
-var _hole_open := true  # delik: true=ac (gorunmez)  false=kapat
+var _hole_open := true  # delik: true=ac  false=kapat
 var _radius_m := 40.0
-var _strength := 0.06   # sculpt: ham yukseklik / vurus
-var _opacity := 0.5     # boya: agirlik / vurus (0..1)
+var _strength := 0.06
+var _opacity := 0.5
 var _status: Label
 var _layer_opt: OptionButton
+var _mode_row: Control
+var _hole_row: Control
+var _layer_row: Control
+var _strength_row: Control
+var _opacity_row: Control
+var _open_btn: Button
+var _tool_btns: Array[Button] = []
 
 var _mgr: Node = null
 var _stroking := false
 var _stroke_seen := {}
 var _flatten_target := 0.0
-# sculpt undo: idx(int key) + val(float)
 var _stroke_idx := PackedInt32Array()
 var _stroke_val := PackedFloat32Array()
-# boya undo: key + paketli (idx,w) iki int
 var _p_key := PackedInt32Array()
 var _p_ip := PackedInt32Array()
 var _p_wp := PackedInt32Array()
-# delik undo: key + orijinal R8 deger (0..1)
 var _o_key := PackedInt32Array()
 var _o_val := PackedFloat32Array()
-var _undo: Array = []          # [{kind, ...}]
+var _undo: Array = []
 const UNDO_MAX := 8
+
+# firca halkasi (overlay)
+var _cam: Camera3D = null
+var _brush_world := Vector3.ZERO
+var _brush_valid := false
 
 
 func _enter_tree() -> void:
-	_build_panel()
-	add_control_to_dock(EditorPlugin.DOCK_SLOT_RIGHT_BL, _panel)
+	_build_toolbar()
+	_build_bottombar()
+	add_control_to_container(EditorPlugin.CONTAINER_SPATIAL_EDITOR_SIDE_LEFT, _toolbar)
+	add_control_to_container(EditorPlugin.CONTAINER_SPATIAL_EDITOR_BOTTOM, _bottombar)
+	_sync_tool_ui()
+	_refresh_status()
 
 
 func _exit_tree() -> void:
-	if _panel:
-		remove_control_from_docks(_panel)
-		_panel.free()
+	if _toolbar:
+		remove_control_from_container(
+			EditorPlugin.CONTAINER_SPATIAL_EDITOR_SIDE_LEFT, _toolbar)
+		_toolbar.free()
+	if _bottombar:
+		remove_control_from_container(
+			EditorPlugin.CONTAINER_SPATIAL_EDITOR_BOTTOM, _bottombar)
+		_bottombar.free()
 
 
-func _build_panel() -> void:
-	_panel = VBoxContainer.new()
-	_panel.name = "Terrain"
-	var title := Label.new()
-	title.text = "TERRAIN TOOLS"
-	_panel.add_child(title)
+# === UI: SOL ARAC CUBUGU (Terrain3D deseni) =========================
+func _big(b: Button) -> Button:
+	b.custom_minimum_size = MIN_BTN
+	b.add_theme_font_size_override("font_size", 18)
+	b.focus_mode = Control.FOCUS_NONE
+	return b
 
-	var en := CheckButton.new()
-	en.text = "Aktif (3D'ye dokun)"
-	en.toggled.connect(func(v): _active = v; _refresh_status())
-	_panel.add_child(en)
 
-	var tool := OptionButton.new()
-	for s in ["Heykel (sculpt)", "Boya (doku)", "Delik (hole)"]:
-		tool.add_item(s)
-	tool.item_selected.connect(_on_tool_changed)
-	_panel.add_child(_row("Arac", tool))
+func _build_toolbar() -> void:
+	_toolbar = VBoxContainer.new()
+	_toolbar.name = "TerrainTools"
+	_toolbar.add_theme_constant_override("separation", 6)
 
-	var mode := OptionButton.new()
-	for s in ["Yukselt", "Alcalt", "Yumusat", "Duzlestir"]:
-		mode.add_item(s)
-	mode.item_selected.connect(func(i): _mode = i)
-	_panel.add_child(_row("Heykel modu", mode))
+	var t := Label.new()
+	t.text = "ARAZI"
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toolbar.add_child(t)
 
-	var hmode := OptionButton.new()
-	for s in ["Delik ac", "Delik kapat"]:
-		hmode.add_item(s)
-	hmode.item_selected.connect(func(i): _hole_open = (i == 0))
-	_panel.add_child(_row("Delik modu", hmode))
+	var en := _big(Button.new())
+	en.text = "● AKTIF"
+	en.toggle_mode = true
+	en.toggled.connect(_on_active_toggled)
+	_toolbar.add_child(en)
 
-	_layer_opt = OptionButton.new()
-	_layer_opt.item_selected.connect(func(i): _layer = i)
-	_panel.add_child(_row("Zemin", _layer_opt))
-	var lref := Button.new()
-	lref.text = "Zemin listesini tazele"
+	_toolbar.add_child(HSeparator.new())
+
+	var names := ["⛰ Heykel", "🖌 Boya", "⌬ Delik"]
+	for i in names.size():
+		var b := _big(Button.new())
+		b.text = names[i]
+		b.toggle_mode = true
+		b.pressed.connect(_on_tool_btn.bind(i))
+		_tool_btns.append(b)
+		_toolbar.add_child(b)
+	_tool_btns[0].button_pressed = true
+
+	_toolbar.add_child(HSeparator.new())
+
+	var u := _big(Button.new())
+	u.text = "↶ GERI AL"
+	u.pressed.connect(_on_undo)
+	_toolbar.add_child(u)
+
+	_open_btn = _big(Button.new())
+	_open_btn.text = "SAHNEYI AC"
+	_open_btn.pressed.connect(_on_open_scene)
+	_toolbar.add_child(_open_btn)
+
+
+# === UI: ALT BAR (baglama duyarli) ==================================
+func _slider_row(lbl: String, lo: float, hi: float, val: float,
+		cb: Callable) -> Control:
+	var h := HBoxContainer.new()
+	var l := Label.new()
+	l.text = lbl
+	l.custom_minimum_size.x = 96
+	h.add_child(l)
+	var s := HSlider.new()
+	s.min_value = lo
+	s.max_value = hi
+	s.step = (hi - lo) / 200.0
+	s.value = val
+	s.custom_minimum_size = Vector2(220, 40)
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(s)
+	var vl := Label.new()
+	vl.custom_minimum_size.x = 60
+	vl.text = "%.3f" % val
+	s.value_changed.connect(func(v): vl.text = "%.3f" % v; cb.call(v))
+	h.add_child(vl)
+	return h
+
+
+func _opt_row(lbl: String, items: Array, cb: Callable) -> Control:
+	var h := HBoxContainer.new()
+	var l := Label.new()
+	l.text = lbl
+	l.custom_minimum_size.x = 96
+	h.add_child(l)
+	var o := OptionButton.new()
+	for s in items:
+		o.add_item(s)
+	o.custom_minimum_size = Vector2(170, 42)
+	o.item_selected.connect(cb)
+	h.add_child(o)
+	h.set_meta("opt", o)
+	return h
+
+
+func _build_bottombar() -> void:
+	_bottombar = PanelContainer.new()
+	_bottombar.name = "TerrainBar"
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	_bottombar.add_child(row)
+
+	row.add_child(_slider_row("Yaricap (m)", 2.0, 400.0, _radius_m,
+		func(v): _radius_m = v; update_overlays()))
+
+	_strength_row = _slider_row("Heykel guc", 0.005, 0.4, _strength,
+		func(v): _strength = v)
+	row.add_child(_strength_row)
+
+	_opacity_row = _slider_row("Boya yogun.", 0.02, 1.0, _opacity,
+		func(v): _opacity = v)
+	row.add_child(_opacity_row)
+
+	_mode_row = _opt_row("Heykel modu",
+		["Yukselt", "Alcalt", "Yumusat", "Duzlestir"],
+		func(i): _mode = i)
+	row.add_child(_mode_row)
+
+	_layer_row = _opt_row("Zemin", ["(zemin yok)"], func(i): _layer = i)
+	_layer_opt = _layer_row.get_meta("opt")
+	row.add_child(_layer_row)
+	var lref := _big(Button.new())
+	lref.text = "Zemin↻"
+	lref.custom_minimum_size = Vector2(78, 42)
 	lref.pressed.connect(_reload_layers)
-	_panel.add_child(lref)
+	row.add_child(lref)
 
-	_panel.add_child(_slider("Yaricap (m)", 2.0, 400.0, _radius_m,
-		func(v): _radius_m = v))
-	_panel.add_child(_slider("Heykel guc", 0.005, 0.4, _strength,
-		func(v): _strength = v))
-	_panel.add_child(_slider("Boya yogunluk", 0.02, 1.0, _opacity,
-		func(v): _opacity = v))
+	_hole_row = _opt_row("Delik",
+		["Delik ac", "Delik kapat"],
+		func(i): _hole_open = (i == 0); update_overlays())
+	row.add_child(_hole_row)
 
-	var save := Button.new()
-	save.text = "ARAZIYI KAYDET (height + meta)"
-	save.pressed.connect(_on_save)
-	_panel.add_child(save)
+	row.add_child(VSeparator.new())
 
-	var psave := Button.new()
-	psave.text = "BOYAYI KAYDET (splat)"
-	psave.pressed.connect(_on_save_splat)
-	_panel.add_child(psave)
+	var sv := _big(Button.new())
+	sv.text = "ARAZIYI\nKAYDET"
+	sv.pressed.connect(_on_save)
+	row.add_child(sv)
+	var sp := _big(Button.new())
+	sp.text = "BOYAYI\nKAYDET"
+	sp.pressed.connect(_on_save_splat)
+	row.add_child(sp)
+	var sh := _big(Button.new())
+	sh.text = "DELIGI\nKAYDET"
+	sh.pressed.connect(_on_save_hole)
+	row.add_child(sh)
 
-	var hsave := Button.new()
-	hsave.text = "DELIGI KAYDET (holes)"
-	hsave.pressed.connect(_on_save_hole)
-	_panel.add_child(hsave)
-
-	var undo := Button.new()
-	undo.text = "GERI AL"
-	undo.pressed.connect(_on_undo)
-	_panel.add_child(undo)
-
+	row.add_child(VSeparator.new())
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_panel.add_child(_status)
+	_status.custom_minimum_size.x = 260
+	row.add_child(_status)
+
+
+# === ARAC / DURUM ===================================================
+func _on_active_toggled(v: bool) -> void:
+	_active = v
+	if _active:
+		if _find_mgr():
+			# Otomatik sec -> spatial editor girisi/overlay bize forward eder
+			var sel := get_editor_interface().get_selection()
+			sel.clear()
+			sel.add_node(_mgr)
+		else:
+			_active = false
+			for b in _toolbar.get_children():
+				if b is Button and b.toggle_mode and b.text == "● AKTIF":
+					b.set_pressed_no_signal(false)
+	_brush_valid = false
+	update_overlays()
 	_refresh_status()
 
 
-func _on_tool_changed(i: int) -> void:
+func _on_tool_btn(i: int) -> void:
 	_tool = i
+	for k in _tool_btns.size():
+		_tool_btns[k].set_pressed_no_signal(k == i)
 	if _tool == 1:
 		_reload_layers()
+	_sync_tool_ui()
+	update_overlays()
 	_refresh_status()
+
+
+func _sync_tool_ui() -> void:
+	if _strength_row == null:
+		return
+	_strength_row.visible = _tool == 0
+	_mode_row.visible = _tool == 0
+	_opacity_row.visible = _tool == 1
+	_layer_row.visible = _tool == 1
+	_hole_row.visible = _tool == 2
 
 
 func _reload_layers() -> void:
@@ -146,43 +282,31 @@ func _reload_layers() -> void:
 	_refresh_status()
 
 
-func _row(lbl: String, ctrl: Control) -> HBoxContainer:
-	var h := HBoxContainer.new()
-	var l := Label.new()
-	l.text = lbl
-	l.custom_minimum_size.x = 90
-	h.add_child(l)
-	ctrl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(ctrl)
-	return h
-
-
-func _slider(lbl: String, lo: float, hi: float, val: float, cb: Callable) -> HBoxContainer:
-	var s := HSlider.new()
-	s.min_value = lo
-	s.max_value = hi
-	s.step = (hi - lo) / 200.0
-	s.value = val
-	var vl := Label.new()
-	vl.custom_minimum_size.x = 52
-	vl.text = "%.3f" % val
-	s.value_changed.connect(func(v): vl.text = "%.3f" % v; cb.call(v))
-	var h := _row(lbl, s)
-	h.add_child(vl)
-	return h
-
-
 func _refresh_status() -> void:
 	if _status == null:
 		return
-	var m := "VAR" if _find_mgr() else "YOK (sahnede TerrainChunkManager?)"
+	var has := _find_mgr()
+	var m := "VAR" if has else "YOK"
 	var tl := "Heykel"
 	if _tool == 1:
 		tl = "Boya z%d" % _layer
 	elif _tool == 2:
 		tl = "Delik " + ("ac" if _hole_open else "kapat")
-	_status.text = "Durum: %s | %s | Manager: %s\nUndo: %d adim" % [
-		("AKTIF" if _active else "kapali"), tl, m, _undo.size()]
+	var hint := ""
+	if not has:
+		hint = "\nSahneyi ac: scenes/main.tscn + 3B sekmesi"
+	elif not _active:
+		hint = "\n'● AKTIF'i ac, sonra 3B'ye dokun"
+	_status.text = "Durum: %s | %s | Manager: %s | Undo: %d%s" % [
+		("AKTIF" if _active else "kapali"), tl, m, _undo.size(), hint]
+	if _open_btn:
+		_open_btn.visible = not has
+
+
+func _on_open_scene() -> void:
+	var p := str(ProjectSettings.get_setting(
+		"application/run/main_scene", "res://scenes/main.tscn"))
+	get_editor_interface().open_scene_from_path(p)
 
 
 func _find_mgr() -> bool:
@@ -205,30 +329,40 @@ func _scan(n: Node) -> Node:
 	return null
 
 
-func _handles(_object) -> bool:
-	return _active
+# === FIRCA HALKASI (overlay) =======================================
+func _forward_3d_draw_over_viewport(overlay: Control) -> void:
+	if not _active or not _brush_valid or _cam == null:
+		return
+	if _cam.is_position_behind(_brush_world):
+		return
+	var c := _cam.unproject_position(_brush_world)
+	var e := _cam.unproject_position(
+		_brush_world + _cam.global_transform.basis.x * _radius_m)
+	var px: float = clampf(c.distance_to(e), 4.0, 4000.0)
+	overlay.draw_arc(c, px, 0.0, TAU, 64, RING_BG, 5.0, true)
+	overlay.draw_arc(c, px, 0.0, TAU, 64, RING_COL, 2.0, true)
+	overlay.draw_circle(c, 3.0, RING_COL)
+
+
+# === GIRIS ==========================================================
+func _handles(object) -> bool:
+	return _active and object != null \
+		and object.has_method("edit_apply_dab")
 
 
 func _forward_3d_gui_input(cam: Camera3D, event: InputEvent) -> int:
-	if not _active or not _find_mgr():
-		return EditorPlugin.AFTER_GUI_INPUT_PASS
-	if not _mgr.edit_ensure():
-		return EditorPlugin.AFTER_GUI_INPUT_PASS
-	if _tool == 1 and not _mgr.edit_splat_ensure():
-		if _status:
-			_status.text = "Boya icin Inspector'a 'layer_albedo' dokulari ekle."
-		return EditorPlugin.AFTER_GUI_INPUT_PASS
-	if _tool == 2 and not _mgr.edit_hole_ensure():
+	_cam = cam
+	if not _active or not _find_mgr() or not _mgr.edit_ensure():
 		return EditorPlugin.AFTER_GUI_INPUT_PASS
 
 	var pos := Vector2.ZERO
-	var phase := -1   # 0 press 1 move 2 release
+	var phase := -1   # -1 hover  0 press  1 move  2 release
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		pos = event.position
 		phase = 0 if event.pressed else 2
-	elif event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+	elif event is InputEventMouseMotion:
 		pos = event.position
-		phase = 1
+		phase = 1 if (event.button_mask & MOUSE_BUTTON_MASK_LEFT) else -1
 	elif event is InputEventScreenTouch:
 		pos = event.position
 		phase = 0 if event.pressed else 2
@@ -241,10 +375,25 @@ func _forward_3d_gui_input(cam: Camera3D, event: InputEvent) -> int:
 	var origin := cam.project_ray_origin(pos)
 	var dir := cam.project_ray_normal(pos)
 	var hit: Dictionary = _mgr.edit_raycast(origin, dir)
-	if not hit.get("hit", false):
-		return EditorPlugin.AFTER_GUI_INPUT_STOP if _stroking else EditorPlugin.AFTER_GUI_INPUT_PASS
-	var wp: Vector3 = hit["pos"]
+	_brush_valid = hit.get("hit", false)
+	if _brush_valid:
+		_brush_world = hit["pos"]
+	update_overlays()
 
+	if not _brush_valid:
+		return EditorPlugin.AFTER_GUI_INPUT_STOP if _stroking \
+			else EditorPlugin.AFTER_GUI_INPUT_PASS
+	if phase == -1:
+		return EditorPlugin.AFTER_GUI_INPUT_PASS   # sadece halka takip
+	# araca gore hazirlik (ensure)
+	if _tool == 1 and not _mgr.edit_splat_ensure():
+		if _status:
+			_status.text = "Boya icin Inspector'a 'layer_albedo' dokulari ekle."
+		return EditorPlugin.AFTER_GUI_INPUT_STOP
+	if _tool == 2 and not _mgr.edit_hole_ensure():
+		return EditorPlugin.AFTER_GUI_INPUT_STOP
+
+	var wp: Vector3 = _brush_world
 	if phase == 0:
 		_begin_stroke(wp)
 		_dab(wp)
@@ -403,9 +552,7 @@ func _on_save() -> void:
 
 
 func _on_save_splat() -> void:
-	if not _find_mgr():
-		return
-	if not _mgr.has_method("edit_save_splat"):
+	if not _find_mgr() or not _mgr.has_method("edit_save_splat"):
 		return
 	var ok: bool = _mgr.edit_save_splat()
 	if _status:
@@ -415,9 +562,7 @@ func _on_save_splat() -> void:
 
 
 func _on_save_hole() -> void:
-	if not _find_mgr():
-		return
-	if not _mgr.has_method("edit_save_hole"):
+	if not _find_mgr() or not _mgr.has_method("edit_save_hole"):
 		return
 	var ok: bool = _mgr.edit_hole_ensure() and _mgr.edit_save_hole()
 	if _status:
