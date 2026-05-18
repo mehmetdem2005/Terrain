@@ -42,6 +42,9 @@ var _mgr: Node = null
 var _stroking := false
 var _stroke_seen := {}
 var _flatten_target := 0.0
+var _last_wp := Vector3.ZERO
+var _height_m := 100.0
+var _height_row: Control
 var _stroke_idx := PackedInt32Array()
 var _stroke_val := PackedFloat32Array()
 var _p_key := PackedInt32Array()
@@ -199,12 +202,17 @@ func _build_bottombar() -> void:
 	row.add_child(_opacity_row)
 
 	_mode_row = _opt_row("Heykel modu",
-		["Yukselt", "Alcalt", "Yumusat", "Duzlestir"],
-		func(i): _mode = i)
+		["Yukselt", "Alcalt", "Yumusat", "Duzlestir", "Yukseklik"],
+		func(i): _mode = i; _sync_tool_ui())
 	row.add_child(_mode_row)
 
+	_height_row = _slider_row("Hedef yuk (m)", -200.0, 800.0, _height_m,
+		func(v): _height_m = v)
+	row.add_child(_height_row)
+
 	_brush_row = _opt_row("Firca",
-		["Yumusak", "Sert", "Duz", "Halka", "Gurultu"],
+		["Yumusak", "Sert", "Duz", "Halka", "Gurultu",
+		"Dogrusal", "Gauss", "Kare", "Yildiz", "Serpme", "Damga"],
 		func(i): _brush = i; update_overlays())
 	row.add_child(_brush_row)
 
@@ -280,6 +288,8 @@ func _sync_tool_ui() -> void:
 		return
 	_strength_row.visible = _tool == 0
 	_mode_row.visible = _tool == 0
+	if _height_row:
+		_height_row.visible = _tool == 0 and _mode == 4   # Yukseklik
 	_opacity_row.visible = _tool == 1
 	_layer_row.visible = _tool == 1
 	_hole_row.visible = _tool == 2
@@ -313,7 +323,9 @@ func _refresh_status() -> void:
 		tl = "Boya z%d" % _layer
 	elif _tool == 2:
 		tl = "Delik " + ("ac" if _hole_open else "kapat")
-	var bn: String = ["Yumusak", "Sert", "Duz", "Halka", "Gurultu"][clampi(_brush, 0, 4)]
+	var bn: String = ["Yumusak", "Sert", "Duz", "Halka", "Gurultu",
+		"Dogrusal", "Gauss", "Kare", "Yildiz", "Serpme",
+		"Damga"][clampi(_brush, 0, 10)]
 	var hint := ""
 	if not has:
 		hint = "\nSahneyi ac: scenes/main.tscn + 3B sekmesi"
@@ -364,7 +376,8 @@ func _forward_3d_draw_over_viewport(overlay: Control) -> void:
 	overlay.draw_arc(c, px, 0.0, TAU, 72, RING_BG, 5.0, true)
 	overlay.draw_arc(c, px, 0.0, TAU, 72, RING_COL, 2.0, true)
 	# ic halka = firca cekirdegi (etkili merkez) -> sekli gosterir
-	var core: float = [0.5, 0.32, 0.9, 0.62, 0.5][clampi(_brush, 0, 4)]
+	var core: float = [0.5, 0.32, 0.9, 0.62, 0.5,
+		0.4, 0.42, 0.85, 0.5, 0.5, 0.95][clampi(_brush, 0, 10)]
 	var inner: Color = RING_COL
 	inner.a = 0.45
 	overlay.draw_arc(c, px * core, 0.0, TAU, 56, inner, 1.5, true)
@@ -423,10 +436,15 @@ func _forward_3d_gui_input(cam: Camera3D, event: InputEvent) -> int:
 	var wp: Vector3 = _brush_world
 	if phase == 0:
 		_begin_stroke(wp)
+		_last_wp = wp
 		_dab(wp)
+		_flush_gpu()
 	elif phase == 1 and _stroking:
-		_dab(wp)
+		_stroke_to(wp)
+		_flush_gpu()
 	elif phase == 2 and _stroking:
+		_stroke_to(wp)
+		_flush_gpu()
 		_end_stroke()
 	return EditorPlugin.AFTER_GUI_INPUT_STOP
 
@@ -457,6 +475,30 @@ func _dab(wp: Vector3) -> void:
 		_dab_hole(wp)
 
 
+## Vurus boyunca son nokta -> yeni nokta arasi araliklarla doldur. Hizli
+## parmak surukleyince Terrain3D gibi kesintisiz iz; nokta nokta KALMAZ.
+func _stroke_to(wp: Vector3) -> void:
+	var step := maxf(_radius_m * 0.25, 0.5)
+	var seg := _last_wp.distance_to(wp)
+	var n := int(seg / step)
+	if n > 256:
+		n = 256
+	for i in range(1, n + 1):
+		_dab(_last_wp.lerp(wp, float(i) / float(n + 1)))
+	_dab(wp)
+	_last_wp = wp
+
+
+## Tum ara vuruslardan sonra TEK GPU yuklemesi (akici; her dab'de degil).
+func _flush_gpu() -> void:
+	if _tool == 0:
+		_mgr.edit_refresh_gpu()
+	elif _tool == 1:
+		_mgr.edit_splat_refresh_gpu()
+	else:
+		_mgr.edit_hole_refresh_gpu()
+
+
 func _dab_sculpt(wp: Vector3) -> void:
 	var hr: int = _mgr.edit_hr()
 	var texel_m: float = float(_mgr.world_size) / float(hr - 1)
@@ -474,9 +516,10 @@ func _dab_sculpt(wp: Vector3) -> void:
 				_stroke_seen[key] = true
 				_stroke_idx.append(key)
 				_stroke_val.append(_mgr.edit_sample_raw(x, y))
-	_mgr.edit_apply_dab(tc.x, tc.y, r_tex, _strength, _mode,
-		_flatten_target, _brush)
-	_mgr.edit_refresh_gpu()
+	var tgt := _flatten_target
+	if _mode == 4:   # Yukseklik: hedef = mutlak metre -> ham (0..1)
+		tgt = (_height_m - _mgr.height_offset) / maxf(_mgr.height_scale, 0.001)
+	_mgr.edit_apply_dab(tc.x, tc.y, r_tex, _strength, _mode, tgt, _brush)
 
 
 func _dab_paint(wp: Vector3) -> void:
@@ -501,7 +544,6 @@ func _dab_paint(wp: Vector3) -> void:
 				_p_ip.append(pk.x)
 				_p_wp.append(pk.y)
 	_mgr.edit_apply_dab_splat(pc.x, pc.y, r_px, _opacity, _layer, _brush)
-	_mgr.edit_splat_refresh_gpu()
 
 
 func _dab_hole(wp: Vector3) -> void:
@@ -524,7 +566,6 @@ func _dab_hole(wp: Vector3) -> void:
 				_o_key.append(key)
 				_o_val.append(_mgr.edit_hole_get(x, y))
 	_mgr.edit_apply_dab_hole(pc.x, pc.y, r_px, _hole_open, _brush)
-	_mgr.edit_hole_refresh_gpu()
 
 
 func _end_stroke() -> void:
