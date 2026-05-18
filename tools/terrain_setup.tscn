@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+; ARAZI AYAR/URETIM SAHNESI (sadece editor icin - oyun sahnesi DEGIL).
+; Bu sahneyi ac, "TerrainSetup" dugumunu sec, Inspector'dan ayarla,
+; "yeniden_uret" kutusunu isaretle. terrain/terrain_data + material +
+; assets yeniden bake edilir. Oyun sahnesi (scenes/main.tscn) bunu
+; kullanmaz; oradaki Terrain3D temiz/duz kalir (en iyi performans).
+
+[ext_resource type="Script" path="res://scripts/terrain_setup.gd" id="1_set"]
+
+[node name="TerrainSetup" type="Terrain3D"]
+data_directory = "res://terrain/terrain_data"
+script = ExtResource("1_set")

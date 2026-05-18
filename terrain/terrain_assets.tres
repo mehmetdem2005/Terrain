@@ -8,8 +8,6 @@ name = "ground"
 albedo_texture = ExtResource("1_tk2ly")
 normal_texture = ExtResource("2_nou1c")
 ao_strength = 0.6
-detiling_rotation = 0.3
-detiling_shift = 0.3
 
 [resource]
 texture_list = Array[Terrain3DTextureAsset]([SubResource("Terrain3DTextureAsset_hxkb6")])

@@ -1,10 +1,9 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="5_ply"]
 [ext_resource type="Script" path="res://scripts/virtual_joystick.gd" id="6_joy"]
 [ext_resource type="Terrain3DMaterial" path="res://terrain/terrain_material.tres" id="2_mat"]
 [ext_resource type="Terrain3DAssets" path="res://terrain/terrain_assets.tres" id="3_ast"]
-[ext_resource type="Script" path="res://scripts/terrain_setup.gd" id="7_set"]
 [ext_resource type="Script" path="res://scripts/fps_label.gd" id="8_fps"]
 
 [sub_resource type="Environment" id="Env"]
@@ -39,7 +38,6 @@ assets = ExtResource("3_ast")
 vertex_spacing = 4.0861930847168
 mesh_lods = 4
 cast_shadows = 0
-script = ExtResource("7_set")
 
 [node name="Player" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 400, 0)

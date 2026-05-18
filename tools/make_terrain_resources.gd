@@ -17,9 +17,8 @@ func _initialize() -> void:
 	tex.uv_scale = 0.1            # ~10 m doku tekrari (eski tex_tiling=10)
 	tex.ao_strength = 0.6
 	tex.roughness = 0.0
-	# Doku tekrarini kir (Terrain3D "detiling" - tekrar deseni gozukmesin):
-	tex.detiling_rotation = 0.3   # her tile'a rastgele aci
-	tex.detiling_shift = 0.3      # her tile'a rastgele kaydirma
+	# NOT: detiling (rastgele aci/kaydir) MOBILDE PAHALI -> varsayilan
+	# KAPALI. Gerekirse Inspector'dan acilir (perf dususu kabul edilirse).
 
 	var assets := Terrain3DAssets.new()
 	var tl: Array[Terrain3DTextureAsset] = [tex]

@@ -32,10 +32,11 @@ const AST_PATH := "res://terrain/terrain_assets.tres"
 	"res://textures/forrest_ground_01_nor_gl_1k.png")
 ## Doku kac metrede bir tekrar etsin (kucuk = sik desen).
 @export var doku_tekrar_m: float = 10.0
-## Tekrar desenini kir (0=kapali .. 1=cok). Aci varyasyonu.
-@export_range(0.0, 1.0) var rastgele_aci: float = 0.3
-## Tekrar desenini kir - kaydirma varyasyonu.
-@export_range(0.0, 1.0) var rastgele_kaydir: float = 0.3
+## DETILING - tekrar desenini kirar AMA MOBILDE PAHALIDIR (kasma yapar).
+## Varsayilan 0 (kapali). Sadece guclu cihazda artir.
+@export_range(0.0, 1.0) var rastgele_aci: float = 0.0
+## DETILING kaydirma - aym uyari (mobilde pahali).
+@export_range(0.0, 1.0) var rastgele_kaydir: float = 0.0
 @export_range(0.0, 1.0) var ao_gucu: float = 0.6
 @export_range(0.0, 1.0) var puruzluluk: float = 0.0
 
