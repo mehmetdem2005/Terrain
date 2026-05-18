@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/terrain_chunk_manager.gd" id="1_mgr"]
 [ext_resource type="Shader" path="res://terrain/terrain_displacement.gdshader" id="2_shd"]
@@ -8,25 +8,17 @@
 [ext_resource type="Texture2D" uid="uid://cpbjashj7n4ry" path="res://textures/forrest_ground_01_diff_1k.png" id="7_alb"]
 [ext_resource type="Texture2D" uid="uid://kqbdtsn2nxem" path="res://textures/forrest_ground_01_nor_gl_1k.png" id="8_nrm"]
 [ext_resource type="Texture2D" uid="uid://dm00pkyfpwocs" path="res://textures/forrest_ground_01_rough_1k.png" id="9_rgh"]
-
-[sub_resource type="ProceduralSkyMaterial" id="Sky_mat"]
-sky_top_color = Color(0.38, 0.55, 0.78, 1)
-sky_horizon_color = Color(0.72, 0.79, 0.82, 1)
-ground_bottom_color = Color(0.24, 0.26, 0.23, 1)
-ground_horizon_color = Color(0.72, 0.79, 0.82, 1)
-
-[sub_resource type="Sky" id="Sky"]
-sky_material = SubResource("Sky_mat")
+[ext_resource type="Texture2D" uid="uid://bfxtkprsg7qqs" path="res://textures/forrest_ground_01_ao_1k.png" id="10_ao"]
 
 [sub_resource type="Environment" id="Env"]
-background_mode = 2
-sky = SubResource("Sky")
-ambient_light_source = 3
-ambient_light_color = Color(0.62, 0.67, 0.72, 1)
-ambient_light_energy = 0.45
+background_mode = 1
+background_color = Color(0.74, 0.81, 0.85, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.86, 0.88, 0.9, 1)
+ambient_light_energy = 1.15
 tonemap_mode = 2
 fog_enabled = true
-fog_light_color = Color(0.72, 0.79, 0.82, 1)
+fog_light_color = Color(0.74, 0.81, 0.85, 1)
 fog_density = 0.00009
 
 [sub_resource type="CapsuleShape3D" id="Caps_shape"]
@@ -58,10 +50,13 @@ enable_collision = true
 collision_window = 129
 collision_rebuild_dist = 24.0
 terrain_shader = ExtResource("2_shd")
-low_albedo = ExtResource("7_alb")
-low_normal = ExtResource("8_nrm")
-low_rough = ExtResource("9_rgh")
-tex_tiling = 8.0
+albedo_tex = ExtResource("7_alb")
+normal_tex = ExtResource("8_nrm")
+rough_tex = ExtResource("9_rgh")
+ao_tex = ExtResource("10_ao")
+tex_tiling = 10.0
+normal_strength = 0.45
+ao_strength = 0.6
 show_in_editor = true
 editor_preview_level = 3
 verbose_log = true
@@ -107,7 +102,8 @@ far = 9000.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 0, 200, 0)
-shadow_enabled = true
+light_energy = 0.75
+shadow_enabled = false
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Env")

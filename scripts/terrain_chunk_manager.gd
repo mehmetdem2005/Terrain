@@ -50,35 +50,17 @@ class_name TerrainChunkManager
 @export var terrain_shader: Shader
 
 @export_group("Terrain Textures")
-## Her yuvaya Inspector'dan doku dosyasi (png/jpg/exr...) surukle/sec.
-## Hicbiri atanmazsa duz renk dolgusu kullanilir (eski gorunum).
-## TEK DOKU yeterli: yalniz "Alcak" yuvalarini doldur, tum arazi onu
-## kullanir. Egim/Yuksek bos ise otomatik Alcak'a duser.
-@export_subgroup("Alcak (cim/zemin) - TEK DOKU icin yeterli")
-@export var low_albedo: Texture2D
-@export var low_normal: Texture2D
-@export var low_rough: Texture2D
-@export_subgroup("Egim (kaya/yamac) - opsiyonel")
-@export var slope_albedo: Texture2D
-@export var slope_normal: Texture2D
-@export_subgroup("Yuksek (kar/zirve) - opsiyonel")
-@export var high_albedo: Texture2D
-@export var high_normal: Texture2D
-@export_subgroup("Detay (yakin zenginlik)")
-@export var detail_albedo: Texture2D
-@export var detail_normal: Texture2D
-@export_subgroup("Ayar")
+## TEK materyal. Inspector'dan doku dosyasi surukle/sec. Bos birakirsan
+## o ozellik devre disi (albedo yoksa duz renk dolgusu kullanilir).
+@export var albedo_tex: Texture2D
+@export var normal_tex: Texture2D
+@export var rough_tex: Texture2D
+@export var ao_tex: Texture2D
 ## Metre / doku tekrari (kucuk = sik desen)
-@export var tex_tiling: float = 24.0
-@export var detail_tiling: float = 4.0
-@export_range(0.0, 1.0) var detail_strength: float = 0.35
-@export_range(0.0, 2.0) var normal_strength: float = 1.0
-## Yukseklik karisim esikleri (0..1 ham yukseklik)
-@export var height_blend_start: float = 0.55
-@export var height_blend_end: float = 0.78
-## Egim karisim esikleri (0=duz .. 1=dik)
-@export var slope_blend_start: float = 0.35
-@export var slope_blend_end: float = 0.70
+@export var tex_tiling: float = 12.0
+## Normal map gucu. Dusuk = daha duz (parlak benek/leke azalir)
+@export_range(0.0, 2.0) var normal_strength: float = 0.5
+@export_range(0.0, 1.0) var ao_strength: float = 0.7
 
 @export_group("Editor Preview")
 @export var show_in_editor: bool = true
@@ -375,37 +357,17 @@ func _set_static_uniforms(mat: ShaderMaterial) -> void:
 
 
 func _set_texture_uniforms(mat: ShaderMaterial) -> void:
-	# TEK DOKU modu: bos egim/yuksek yuvalari otomatik "low"a duser ->
-	# yalniz Alcak doldurunca tum arazi o tek dokuyu kullanir.
-	var s_alb: Texture2D = slope_albedo if slope_albedo != null else low_albedo
-	var h_alb: Texture2D = high_albedo if high_albedo != null else low_albedo
-	var s_nrm: Texture2D = slope_normal if slope_normal != null else low_normal
-	var h_nrm: Texture2D = high_normal if high_normal != null else low_normal
-	var alb_on := low_albedo != null
-	var nrm_on := low_normal != null
-	var det_on := detail_albedo != null
-	var rgh_on := low_rough != null
-	mat.set_shader_parameter("low_albedo", low_albedo)
-	mat.set_shader_parameter("low_normal", low_normal)
-	mat.set_shader_parameter("slope_albedo", s_alb)
-	mat.set_shader_parameter("slope_normal", s_nrm)
-	mat.set_shader_parameter("high_albedo", h_alb)
-	mat.set_shader_parameter("high_normal", h_nrm)
-	mat.set_shader_parameter("detail_albedo", detail_albedo)
-	mat.set_shader_parameter("detail_normal", detail_normal)
-	mat.set_shader_parameter("rough_tex", low_rough)
-	mat.set_shader_parameter("albedo_on", alb_on)
-	mat.set_shader_parameter("normal_on", nrm_on)
-	mat.set_shader_parameter("detail_on", det_on)
-	mat.set_shader_parameter("rough_on", rgh_on)
+	mat.set_shader_parameter("albedo_tex", albedo_tex)
+	mat.set_shader_parameter("normal_tex", normal_tex)
+	mat.set_shader_parameter("rough_tex", rough_tex)
+	mat.set_shader_parameter("ao_tex", ao_tex)
+	mat.set_shader_parameter("albedo_on", albedo_tex != null)
+	mat.set_shader_parameter("normal_on", normal_tex != null)
+	mat.set_shader_parameter("rough_on", rough_tex != null)
+	mat.set_shader_parameter("ao_on", ao_tex != null)
 	mat.set_shader_parameter("tex_tiling", tex_tiling)
-	mat.set_shader_parameter("detail_tiling", detail_tiling)
-	mat.set_shader_parameter("detail_strength", detail_strength)
 	mat.set_shader_parameter("normal_strength", normal_strength)
-	mat.set_shader_parameter("high_start", height_blend_start)
-	mat.set_shader_parameter("high_end", height_blend_end)
-	mat.set_shader_parameter("slope_start", slope_blend_start)
-	mat.set_shader_parameter("slope_end", slope_blend_end)
+	mat.set_shader_parameter("ao_strength", ao_strength)
 
 
 func _get_camera() -> Camera3D:
