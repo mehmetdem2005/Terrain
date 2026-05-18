@@ -1,9 +1,11 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="5_ply"]
 [ext_resource type="Script" path="res://scripts/virtual_joystick.gd" id="6_joy"]
 [ext_resource type="Terrain3DMaterial" path="res://terrain/terrain_material.tres" id="2_mat"]
 [ext_resource type="Terrain3DAssets" path="res://terrain/terrain_assets.tres" id="3_ast"]
+[ext_resource type="Script" path="res://scripts/terrain_setup.gd" id="7_set"]
+[ext_resource type="Script" path="res://scripts/fps_label.gd" id="8_fps"]
 
 [sub_resource type="Environment" id="Env"]
 background_mode = 1
@@ -37,6 +39,7 @@ assets = ExtResource("3_ast")
 vertex_spacing = 4.0861930847168
 mesh_lods = 4
 cast_shadows = 0
+script = ExtResource("7_set")
 
 [node name="Player" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 400, 0)
@@ -88,6 +91,19 @@ grow_horizontal = 1
 grow_vertical = 0
 mouse_filter = 1
 script = ExtResource("6_joy")
+
+[node name="FPS" type="Label" parent="TouchUI"]
+offset_left = 10.0
+offset_top = 8.0
+offset_right = 120.0
+offset_bottom = 34.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 1, 0.4, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.7)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 22
+text = "FPS 0"
+script = ExtResource("8_fps")
 
 [node name="JumpButton" type="Button" parent="TouchUI" groups=["jumpbtn"]]
 anchors_preset = 3
