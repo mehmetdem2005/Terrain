@@ -1,14 +1,9 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=8 format=3]
 
-[ext_resource type="Script" path="res://scripts/terrain_chunk_manager.gd" id="1_mgr"]
-[ext_resource type="Shader" path="res://terrain/terrain_displacement.gdshader" id="2_shd"]
-[ext_resource type="Script" path="res://scripts/terrain_baker.gd" id="4_bake"]
 [ext_resource type="Script" path="res://scripts/player.gd" id="5_ply"]
 [ext_resource type="Script" path="res://scripts/virtual_joystick.gd" id="6_joy"]
-[ext_resource type="Texture2D" uid="uid://cpbjashj7n4ry" path="res://textures/forrest_ground_01_diff_1k.png" id="7_alb"]
-[ext_resource type="Texture2D" uid="uid://kqbdtsn2nxem" path="res://textures/forrest_ground_01_nor_gl_1k.png" id="8_nrm"]
-[ext_resource type="Texture2D" uid="uid://dm00pkyfpwocs" path="res://textures/forrest_ground_01_rough_1k.png" id="9_rgh"]
-[ext_resource type="Texture2D" uid="uid://bfxtkprsg7qqs" path="res://textures/forrest_ground_01_ao_1k.png" id="10_ao"]
+[ext_resource type="Terrain3DMaterial" path="res://terrain/terrain_material.tres" id="2_mat"]
+[ext_resource type="Terrain3DAssets" path="res://terrain/terrain_assets.tres" id="3_ast"]
 
 [sub_resource type="Environment" id="Env"]
 background_mode = 1
@@ -35,39 +30,11 @@ roughness = 0.6
 
 [node name="Main" type="Node3D"]
 
-[node name="TerrainChunkManager" type="Node3D" parent="."]
-script = ExtResource("1_mgr")
-height_file = "res://terrain/height.bin"
-meta_file = "res://terrain/cdlod_meta.json"
-target_path = NodePath("../Player")
-world_size = 5120.0
-height_scale = 340.0
-auto_center = true
-base_range = 140.0
-morph_start_ratio = 0.72
-max_nodes = 1024
-enable_collision = true
-collision_window = 129
-collision_rebuild_dist = 24.0
-terrain_shader = ExtResource("2_shd")
-albedo_tex = ExtResource("7_alb")
-normal_tex = ExtResource("8_nrm")
-rough_tex = ExtResource("9_rgh")
-ao_tex = ExtResource("10_ao")
-tex_tiling = 10.0
-normal_strength = 0.45
-ao_strength = 0.6
-show_in_editor = true
-editor_preview_level = 3
-verbose_log = true
-
-[node name="TerrainBaker" type="Node" parent="."]
-script = ExtResource("4_bake")
-source_exr = "res://heightmap/yarimada_16bit.exr"
-height_file = "res://terrain/height.bin"
-meta_file = "res://terrain/cdlod_meta.json"
-lod_levels = 8
-leaf_grid = 32
+[node name="Terrain3D" type="Terrain3D" parent="." groups=["terrain"]]
+data_directory = "res://terrain/terrain_data"
+material = ExtResource("2_mat")
+assets = ExtResource("3_ast")
+vertex_spacing = 4.0861930847168
 
 [node name="Player" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 400, 0)

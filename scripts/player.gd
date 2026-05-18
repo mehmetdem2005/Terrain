@@ -5,8 +5,9 @@ extends CharacterBody3D
 #             kilitle (bakis), ESC birak.
 #  Mobil    : sol-alt sanal joystick yuru, sag yari surukle bakis,
 #             ZIPLA dugmesi.
-#  Terrain collision'i bu dugumu takip eder (TerrainChunkManager
-#  target_path -> Player).
+#  Arazi = Terrain3D dugumu ("terrain" grubu). Collision Terrain3D'nin
+#  kendi runtime collision'i ile (CharacterBody3D mask 1). Spawn'da
+#  Terrain3D.data.get_height ile yere oturulur.
 # =====================================================================
 
 @export var move_speed: float = 14.0
@@ -53,8 +54,11 @@ func _get_joystick() -> Control:
 
 func _snap_to_ground() -> void:
 	var h := 0.0
-	if _mgr != null and _mgr.has_method("get_terrain_height"):
-		h = _mgr.get_terrain_height(spawn_xz.x, spawn_xz.y)
+	if _mgr != null and "data" in _mgr and _mgr.data != null:
+		var gh: float = _mgr.data.get_height(
+			Vector3(spawn_xz.x, 0.0, spawn_xz.y))
+		if not is_nan(gh):
+			h = gh
 	global_position = Vector3(spawn_xz.x, h + spawn_clearance, spawn_xz.y)
 	velocity = Vector3.ZERO
 
