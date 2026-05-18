@@ -25,7 +25,11 @@ func _initialize() -> void:
 	var mat := Terrain3DMaterial.new()
 	mat.show_checkered = false
 	mat.auto_shader = false
-	mat.world_background = 1    # FLAT (kenar disinda duz) - 0=NONE
+	mat.world_background = 0    # NONE -> harita disi cizilmez (skirt yok)
+	# Mobil-optimize shader (fragment dallanmasi yok) -> telefonda kasma cozumu
+	mat.shader_override = load(
+		"res://addons/terrain_3d/extras/shaders/lightweight.gdshader")
+	mat.shader_override_enabled = true
 
 	var e1 := ResourceSaver.save(assets, "res://terrain/terrain_assets.tres")
 	var e2 := ResourceSaver.save(mat, "res://terrain/terrain_material.tres")

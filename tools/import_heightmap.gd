@@ -48,12 +48,18 @@ func _do_import() -> void:
 	var imgs: Array[Image] = []
 	imgs.resize(Terrain3DRegion.TYPE_MAX)
 	imgs[Terrain3DRegion.TYPE_HEIGHT] = img
-	print("[imp] import_images...")
-	_t.data.import_images(imgs, Vector3.ZERO, 0.0, HEIGHT_M)
+	# Adayi dunya orijinine ortala (eski auto_center davranisi):
+	# goruntu kosesi -half'e konur -> (0,0) ada merkezi -> oyuncu (0,0)'da
+	# adanin uzerinde dogar.
+	var half := float(sz.x - 1) * _t.vertex_spacing * 0.5
+	print("[imp] import_images... ortali offset=", -half)
+	_t.data.import_images(imgs, Vector3(-half, 0.0, -half), 0.0, HEIGHT_M)
 	print("[imp] import bitti, bolge=", _t.data.get_region_count())
 	_t.data.calc_height_range(true)
 	_t.data.save_directory(DST)
 	print("[imp] save -> ", DST)
-	var h0 = _t.data.get_height(Vector3(0.0, 0.0, 0.0))
-	var h1 = _t.data.get_height(Vector3(100.0, 0.0, 100.0))
-	print("[imp] get_height(0,0)=", h0, " (100,100)=", h1, " IMPORT BITTI")
+	var h0 = _t.data.get_height(Vector3(0.0, 0.0, 0.0))          # ada merkezi
+	var hc = _t.data.get_height(Vector3(half, 0.0, half))        # kose (ic)
+	var ho = _t.data.get_height(Vector3(half + 500.0, 0.0, 0.0)) # disari
+	print("[imp] merkez(0,0)=", h0, " kose=", hc,
+		" disari=", ho, " (NaN/0 = kirpma ok) IMPORT BITTI")
