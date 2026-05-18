@@ -20,6 +20,7 @@ var _toolbar: VBoxContainer              # 3B sol kenar
 var _bottombar: PanelContainer           # 3B alt
 var _active := false
 var _tool := 0          # 0 Heykel  1 Boya  2 Delik
+var _brush := 0         # firca sekli: 0 Yumusak 1 Sert 2 Duz 3 Halka 4 Gurultu
 var _mode := 0          # sculpt: 0 raise 1 lower 2 smooth 3 flatten
 var _layer := 0         # boya: secili zemin indeksi
 var _hole_open := true  # delik: true=ac  false=kapat
@@ -29,6 +30,7 @@ var _opacity := 0.5
 var _status: Label
 var _layer_opt: OptionButton
 var _mode_row: Control
+var _brush_row: Control
 var _hole_row: Control
 var _layer_row: Control
 var _strength_row: Control
@@ -129,20 +131,21 @@ func _build_toolbar() -> void:
 func _slider_row(lbl: String, lo: float, hi: float, val: float,
 		cb: Callable) -> Control:
 	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 4)
 	var l := Label.new()
 	l.text = lbl
-	l.custom_minimum_size.x = 96
+	l.custom_minimum_size.x = 78
 	h.add_child(l)
 	var s := HSlider.new()
 	s.min_value = lo
 	s.max_value = hi
 	s.step = (hi - lo) / 200.0
 	s.value = val
-	s.custom_minimum_size = Vector2(220, 40)
-	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.custom_minimum_size = Vector2(150, 34)
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(s)
 	var vl := Label.new()
-	vl.custom_minimum_size.x = 60
+	vl.custom_minimum_size.x = 50
 	vl.text = "%.3f" % val
 	s.value_changed.connect(func(v): vl.text = "%.3f" % v; cb.call(v))
 	h.add_child(vl)
@@ -151,14 +154,16 @@ func _slider_row(lbl: String, lo: float, hi: float, val: float,
 
 func _opt_row(lbl: String, items: Array, cb: Callable) -> Control:
 	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 4)
 	var l := Label.new()
 	l.text = lbl
-	l.custom_minimum_size.x = 96
+	l.custom_minimum_size.x = 78
 	h.add_child(l)
 	var o := OptionButton.new()
 	for s in items:
 		o.add_item(s)
-	o.custom_minimum_size = Vector2(170, 42)
+	o.custom_minimum_size = Vector2(150, 38)
+	o.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	o.item_selected.connect(cb)
 	h.add_child(o)
 	h.set_meta("opt", o)
@@ -168,9 +173,19 @@ func _opt_row(lbl: String, items: Array, cb: Callable) -> Control:
 func _build_bottombar() -> void:
 	_bottombar = PanelContainer.new()
 	_bottombar.name = "TerrainBar"
+	# Sabit yukseklik + yatay kaydirma: diger editor panellerini ITMEZ,
+	# tasan icerik kesilmek yerine kaydirma cubuguyla gezilir.
+	_bottombar.custom_minimum_size.y = 104
+	_bottombar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bottombar.add_child(scroll)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	_bottombar.add_child(row)
+	row.add_theme_constant_override("separation", 8)
+	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	scroll.add_child(row)
 
 	row.add_child(_slider_row("Yaricap (m)", 2.0, 400.0, _radius_m,
 		func(v): _radius_m = v; update_overlays()))
@@ -187,6 +202,11 @@ func _build_bottombar() -> void:
 		["Yukselt", "Alcalt", "Yumusat", "Duzlestir"],
 		func(i): _mode = i)
 	row.add_child(_mode_row)
+
+	_brush_row = _opt_row("Firca",
+		["Yumusak", "Sert", "Duz", "Halka", "Gurultu"],
+		func(i): _brush = i; update_overlays())
+	row.add_child(_brush_row)
 
 	_layer_row = _opt_row("Zemin", ["(zemin yok)"], func(i): _layer = i)
 	_layer_opt = _layer_row.get_meta("opt")
@@ -220,7 +240,8 @@ func _build_bottombar() -> void:
 	row.add_child(VSeparator.new())
 	_status = Label.new()
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_status.custom_minimum_size.x = 260
+	_status.custom_minimum_size = Vector2(240, 0)
+	_status.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(_status)
 
 
@@ -292,13 +313,14 @@ func _refresh_status() -> void:
 		tl = "Boya z%d" % _layer
 	elif _tool == 2:
 		tl = "Delik " + ("ac" if _hole_open else "kapat")
+	var bn: String = ["Yumusak", "Sert", "Duz", "Halka", "Gurultu"][clampi(_brush, 0, 4)]
 	var hint := ""
 	if not has:
 		hint = "\nSahneyi ac: scenes/main.tscn + 3B sekmesi"
 	elif not _active:
 		hint = "\n'● AKTIF'i ac, sonra 3B'ye dokun"
-	_status.text = "Durum: %s | %s | Manager: %s | Undo: %d%s" % [
-		("AKTIF" if _active else "kapali"), tl, m, _undo.size(), hint]
+	_status.text = "Durum: %s | %s | Firca: %s | Manager: %s | Undo: %d%s" % [
+		("AKTIF" if _active else "kapali"), tl, bn, m, _undo.size(), hint]
 	if _open_btn:
 		_open_btn.visible = not has
 
@@ -339,8 +361,13 @@ func _forward_3d_draw_over_viewport(overlay: Control) -> void:
 	var e := _cam.unproject_position(
 		_brush_world + _cam.global_transform.basis.x * _radius_m)
 	var px: float = clampf(c.distance_to(e), 4.0, 4000.0)
-	overlay.draw_arc(c, px, 0.0, TAU, 64, RING_BG, 5.0, true)
-	overlay.draw_arc(c, px, 0.0, TAU, 64, RING_COL, 2.0, true)
+	overlay.draw_arc(c, px, 0.0, TAU, 72, RING_BG, 5.0, true)
+	overlay.draw_arc(c, px, 0.0, TAU, 72, RING_COL, 2.0, true)
+	# ic halka = firca cekirdegi (etkili merkez) -> sekli gosterir
+	var core: float = [0.5, 0.32, 0.9, 0.62, 0.5][clampi(_brush, 0, 4)]
+	var inner: Color = RING_COL
+	inner.a = 0.45
+	overlay.draw_arc(c, px * core, 0.0, TAU, 56, inner, 1.5, true)
 	overlay.draw_circle(c, 3.0, RING_COL)
 
 
@@ -447,7 +474,8 @@ func _dab_sculpt(wp: Vector3) -> void:
 				_stroke_seen[key] = true
 				_stroke_idx.append(key)
 				_stroke_val.append(_mgr.edit_sample_raw(x, y))
-	_mgr.edit_apply_dab(tc.x, tc.y, r_tex, _strength, _mode, _flatten_target)
+	_mgr.edit_apply_dab(tc.x, tc.y, r_tex, _strength, _mode,
+		_flatten_target, _brush)
 	_mgr.edit_refresh_gpu()
 
 
@@ -472,7 +500,7 @@ func _dab_paint(wp: Vector3) -> void:
 				_p_key.append(key)
 				_p_ip.append(pk.x)
 				_p_wp.append(pk.y)
-	_mgr.edit_apply_dab_splat(pc.x, pc.y, r_px, _opacity, _layer)
+	_mgr.edit_apply_dab_splat(pc.x, pc.y, r_px, _opacity, _layer, _brush)
 	_mgr.edit_splat_refresh_gpu()
 
 
@@ -495,7 +523,7 @@ func _dab_hole(wp: Vector3) -> void:
 				_stroke_seen[key] = true
 				_o_key.append(key)
 				_o_val.append(_mgr.edit_hole_get(x, y))
-	_mgr.edit_apply_dab_hole(pc.x, pc.y, r_px, _hole_open)
+	_mgr.edit_apply_dab_hole(pc.x, pc.y, r_px, _hole_open, _brush)
 	_mgr.edit_hole_refresh_gpu()
 
 
