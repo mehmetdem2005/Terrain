@@ -1,3 +1,8 @@
 [gd_resource type="Terrain3DMaterial" format=3]
 
+[ext_resource type="Shader" path="res://addons/terrain_3d/extras/shaders/lightweight.gdshader" id="1_fckoo"]
+
 [resource]
+world_background = 0
+shader_override_enabled = true
+shader_override = ExtResource("1_fckoo")
