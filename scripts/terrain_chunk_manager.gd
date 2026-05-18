@@ -679,7 +679,65 @@ const BRUSH_SQUARE := 7
 const BRUSH_STAR := 8
 const BRUSH_SCATTER := 9
 const BRUSH_STAMP := 10
-const BRUSH_COUNT := 11
+const BRUSH_MASK := 11        # dosyadan gri-ton maske (Terrain3D tarzi)
+const BRUSH_COUNT := 12
+
+var _bmask: Image = null
+var _bmask_w := 0
+var _bmask_h := 0
+var _bmask_rot := 0.0         # radyan
+
+
+## Firca maskesi resmi yukle (res:// veya mutlak yol). Gri-ton/alpha
+## sekli; r*a degeri 0..1 firca gucu olur. Terrain3D firca galerisi gibi.
+func edit_set_brush_mask(path: String) -> bool:
+	var img: Image = null
+	if path.begins_with("res://"):
+		var t := load(path)
+		if t is Texture2D:
+			img = t.get_image()
+		elif t is Image:
+			img = t
+	if img == null:
+		img = Image.load_from_file(path)
+	if img == null:
+		return false
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	_bmask = img
+	_bmask_w = img.get_width()
+	_bmask_h = img.get_height()
+	return _bmask_w > 0 and _bmask_h > 0
+
+
+func edit_set_brush_mask_rot(deg: float) -> void:
+	_bmask_rot = deg_to_rad(deg)
+
+
+func _bmask_sample(u: float, v: float) -> float:
+	# bilinear; sinir disinda 0
+	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
+		return 0.0
+	var fx := u * float(_bmask_w - 1)
+	var fy := v * float(_bmask_h - 1)
+	var x0 := int(fx)
+	var y0 := int(fy)
+	var x1 := mini(x0 + 1, _bmask_w - 1)
+	var y1 := mini(y0 + 1, _bmask_h - 1)
+	var tx := fx - float(x0)
+	var ty := fy - float(y0)
+	var c00 := _bmask.get_pixel(x0, y0)
+	var c10 := _bmask.get_pixel(x1, y0)
+	var c01 := _bmask.get_pixel(x0, y1)
+	var c11 := _bmask.get_pixel(x1, y1)
+	var s00 := c00.r * c00.a
+	var s10 := c10.r * c10.a
+	var s01 := c01.r * c01.a
+	var s11 := c11.r * c11.a
+	var a := lerpf(s00, s10, tx)
+	var b := lerpf(s01, s11, tx)
+	return clampf(lerpf(a, b, ty), 0.0, 1.0)
 
 
 func _hash2(x: int, y: int) -> float:
@@ -730,6 +788,17 @@ func _falloff(nx: float, ny: float, brush: int, x: int, y: int) -> float:
 			return smoothstep(1.0, 0.0, d)
 		BRUSH_STAMP:
 			return 1.0 if d < 1.0 else 0.0
+		BRUSH_MASK:
+			if _bmask == null:
+				return smoothstep(1.0, 0.0, d)
+			var rx := nx
+			var ry := ny
+			if _bmask_rot != 0.0:
+				var cs := cos(_bmask_rot)
+				var sn := sin(_bmask_rot)
+				rx = nx * cs - ny * sn
+				ry = nx * sn + ny * cs
+			return _bmask_sample(rx * 0.5 + 0.5, ry * 0.5 + 0.5)
 	return smoothstep(1.0, 0.0, d)   # BRUSH_SOFT
 
 

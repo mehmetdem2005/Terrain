@@ -45,6 +45,11 @@ var _flatten_target := 0.0
 var _last_wp := Vector3.ZERO
 var _height_m := 100.0
 var _height_row: Control
+var _mask_row: Control
+var _mask_rot_row: Control
+var _mask_files: PackedStringArray = PackedStringArray()
+const BRUSH_MASK := 11
+const BRUSH_DIR := "res://addons/terrain_tools/brushes/"
 var _stroke_idx := PackedInt32Array()
 var _stroke_val := PackedFloat32Array()
 var _p_key := PackedInt32Array()
@@ -212,9 +217,22 @@ func _build_bottombar() -> void:
 
 	_brush_row = _opt_row("Firca",
 		["Yumusak", "Sert", "Duz", "Halka", "Gurultu",
-		"Dogrusal", "Gauss", "Kare", "Yildiz", "Serpme", "Damga"],
-		func(i): _brush = i; update_overlays())
+		"Dogrusal", "Gauss", "Kare", "Yildiz", "Serpme", "Damga",
+		"Maske(dosya)"],
+		func(i): _on_brush_sel(i))
 	row.add_child(_brush_row)
+
+	_scan_masks()
+	var mnames: Array = []
+	for f in _mask_files:
+		mnames.append(f.get_file().get_basename())
+	if mnames.is_empty():
+		mnames.append("(maske yok)")
+	_mask_row = _opt_row("Maske", mnames, func(i): _apply_mask(i))
+	row.add_child(_mask_row)
+	_mask_rot_row = _slider_row("Maske aci", 0.0, 360.0, 0.0,
+		func(v): (_mgr.edit_set_brush_mask_rot(v) if _find_mgr() else null))
+	row.add_child(_mask_rot_row)
 
 	_layer_row = _opt_row("Zemin", ["(zemin yok)"], func(i): _layer = i)
 	_layer_opt = _layer_row.get_meta("opt")
@@ -293,6 +311,10 @@ func _sync_tool_ui() -> void:
 	_opacity_row.visible = _tool == 1
 	_layer_row.visible = _tool == 1
 	_hole_row.visible = _tool == 2
+	if _mask_row:
+		_mask_row.visible = _brush == BRUSH_MASK
+	if _mask_rot_row:
+		_mask_rot_row.visible = _brush == BRUSH_MASK
 
 
 func _reload_layers() -> void:
@@ -341,6 +363,48 @@ func _on_open_scene() -> void:
 	var p := str(ProjectSettings.get_setting(
 		"application/run/main_scene", "res://scenes/main.tscn"))
 	get_editor_interface().open_scene_from_path(p)
+
+
+func _on_brush_sel(i: int) -> void:
+	_brush = i
+	if i == BRUSH_MASK:
+		var sel := 0
+		if _mask_row:
+			var o: OptionButton = _mask_row.get_meta("opt")
+			if o:
+				sel = maxi(o.selected, 0)
+		_apply_mask(sel)
+	_sync_tool_ui()
+	update_overlays()
+
+
+func _scan_masks() -> void:
+	_mask_files = PackedStringArray()
+	var d := DirAccess.open(BRUSH_DIR)
+	if d == null:
+		return
+	var ext := ["png", "jpg", "jpeg", "webp", "exr"]
+	for f in d.get_files():
+		var fn := f
+		if fn.ends_with(".import"):
+			fn = fn.get_basename()
+		if fn.get_extension().to_lower() in ext:
+			var p := BRUSH_DIR + fn
+			if not _mask_files.has(p):
+				_mask_files.append(p)
+
+
+func _apply_mask(i: int) -> void:
+	if _mask_files.is_empty() or not _find_mgr():
+		return
+	i = clampi(i, 0, _mask_files.size() - 1)
+	if not _mgr.edit_set_brush_mask(_mask_files[i]):
+		if _status:
+			_status.text = "Maske yuklenemedi: " + _mask_files[i]
+	if _mask_row:
+		var o: OptionButton = _mask_row.get_meta("opt")
+		if o and o.selected != i:
+			o.select(i)
 
 
 func _find_mgr() -> bool:
