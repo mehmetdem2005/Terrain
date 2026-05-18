@@ -4,7 +4,6 @@
 //  - Vertex'te textureLod (Forward Mobile vertex'te explicit LOD ister).
 //  - Geomorphing: LOD geciste vertex kaba grid'e yumusak kayar -> pop YOK.
 //  - Normal MORF'SUZ global konumdan -> blok dikisi/cizgi YOK.
-//  - Kenar perdesi (skirt): LOD bosluklarini kapatir.
 //  - TEK materyal: albedo + normal + rough + ao (hepsi opsiyonel).
 // =====================================================================
 shader_type spatial;
@@ -25,7 +24,6 @@ uniform float morph_end      = 300.0;
 uniform float grid_cells     = 32.0;
 
 uniform vec3  cam_pos        = vec3(0.0);
-uniform float skirt          = 0.0;
 
 // duz renk dolgusu (albedo dokusu yoksa)
 uniform vec3 low_color  : source_color = vec3(0.34, 0.46, 0.22);
@@ -70,12 +68,6 @@ void vertex() {
 	vec2 w   = node_origin + gp2 * node_size;
 	vec2 uv  = (w - world_min) / world_size;
 	float h  = sample_raw(uv) * height_scale + height_offset;
-
-	bool on_edge = gp.x <= 0.00001 || gp.x >= 0.99999
-				|| gp.y <= 0.00001 || gp.y >= 0.99999;
-	if (on_edge) {
-		h -= skirt;
-	}
 
 	VERTEX = vec3(w.x, h, w.y);
 	v_uv = uv;
