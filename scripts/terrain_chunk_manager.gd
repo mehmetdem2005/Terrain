@@ -75,6 +75,11 @@ class_name TerrainChunkManager
 @export_file("*.png") var splat_idx_file: String = "res://terrain/splat_idx.png"
 @export_file("*.png") var splat_w_file: String = "res://terrain/splat_w.png"
 
+@export_group("Delik (Hole)")
+## Delik maskesi kenar cozunurlugu (texel). Splat'tan bagimsiz ayri dosya.
+@export var hole_size: int = 2048
+@export_file("*.png") var hole_file: String = "res://terrain/holes.png"
+
 @export_group("Editor Preview")
 @export var show_in_editor: bool = true
 ## Editor onizlemesinin tek-tip cizecegi LOD seviyesi
@@ -119,6 +124,12 @@ var _arr_rgh: Texture2DArray
 var _arr_ao: Texture2DArray
 var _layer_count: int = 0
 var _splat_built: bool = false
+
+# --- delik (hole) maskesi ---
+var _hole_on: bool = false
+var _hole_img: Image
+var _hole_tex: ImageTexture
+var _hole_built: bool = false
 
 
 func _ready() -> void:
@@ -189,6 +200,7 @@ func _init_common() -> bool:
 	_build_grid_mesh(_leaf_grid)
 
 	_build_splat()
+	_build_hole()
 
 	_ranges = PackedFloat32Array()
 	for i in _lod_levels:
@@ -270,6 +282,28 @@ func _build_splat() -> void:
 		_splat_w_img.fill(Color(1, 0, 0, 0))              # slot0 tam agirlik
 	_splat_idx_tex = ImageTexture.create_from_image(_splat_idx_img)
 	_splat_w_tex = ImageTexture.create_from_image(_splat_w_img)
+
+
+# === DELIK (hole) maskesi ===========================================
+# R8 maske: 1=opak, 0=delik. Dosya YOKSA _hole_on=false -> shader hic
+# orneklemez, mevcut arazi birebir korunur (P0). Editor ilk delik acmadan
+# once edit_hole_ensure() varsayilan opak maske olusturur.
+func _build_hole() -> void:
+	_hole_built = true
+	_hole_on = false
+	_hole_img = null
+	_hole_tex = null
+	if not FileAccess.file_exists(hole_file):
+		return
+	var img := Image.load_from_file(hole_file)
+	if img == null:
+		return
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_R8)
+	_hole_img = img
+	_hole_tex = ImageTexture.create_from_image(_hole_img)
+	_hole_on = true
 
 
 func _build_pyramid(leaf_minmax: Array) -> void:
@@ -472,6 +506,7 @@ func _set_texture_uniforms(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("normal_strength", normal_strength)
 	mat.set_shader_parameter("ao_strength", ao_strength)
 	_set_splat_uniforms(mat)
+	_set_hole_uniforms(mat)
 
 
 func _set_splat_uniforms(mat: ShaderMaterial) -> void:
@@ -489,6 +524,13 @@ func _set_splat_uniforms(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("layer_normal_on", _arr_nrm != null)
 	mat.set_shader_parameter("layer_rough_on", _arr_rgh != null)
 	mat.set_shader_parameter("layer_ao_on", _arr_ao != null)
+
+
+func _set_hole_uniforms(mat: ShaderMaterial) -> void:
+	if not _hole_built:
+		_build_hole()
+	mat.set_shader_parameter("hole_on", _hole_on)
+	mat.set_shader_parameter("hole_tex", _hole_tex)
 
 
 func _get_camera() -> Camera3D:
@@ -940,5 +982,105 @@ func edit_save_splat() -> bool:
 	var e2 := _splat_w_img.save_png(splat_w_file)
 	if e1 != OK or e2 != OK:
 		push_error("[CDLOD] edit_save_splat: PNG yazilamadi")
+		return false
+	return true
+
+
+# === DELIK EDIT API (yalniz editor eklentisi) =======================
+#  _hole_img (R8) uzerinde duzenler, edit_hole_refresh_gpu ile gorsele
+#  yansir, edit_save_hole ile PNG yazar. Runtime mantigi DEGISMEZ.
+func _apply_hole_to_materials() -> void:
+	for mi in _pool:
+		var m := mi.material_override as ShaderMaterial
+		if m != null:
+			m.set_shader_parameter("hole_on", _hole_on)
+			m.set_shader_parameter("hole_tex", _hole_tex)
+	for nd in _editor_nodes:
+		if nd is MeshInstance3D:
+			var m2 := (nd as MeshInstance3D).material_override as ShaderMaterial
+			if m2 != null:
+				m2.set_shader_parameter("hole_on", _hole_on)
+				m2.set_shader_parameter("hole_tex", _hole_tex)
+
+
+## Delik maskesini hazirla (yoksa varsayilan opak olustur). Editor'de
+## ilk dokunustan once cagrilir.
+func edit_hole_ensure() -> bool:
+	if not _hole_built:
+		if _height_img == null and not _init_common():
+			return false
+		else:
+			_build_hole()
+	if _hole_img == null:
+		var sz := maxi(hole_size, 8)
+		_hole_img = Image.create(sz, sz, false, Image.FORMAT_R8)
+		_hole_img.fill(Color(1, 1, 1))            # 1 = opak (delik yok)
+	if _hole_tex == null:
+		_hole_tex = ImageTexture.create_from_image(_hole_img)
+	_hole_on = true
+	_apply_hole_to_materials()
+	return true
+
+
+func edit_hole_size() -> int:
+	return _hole_img.get_width() if _hole_img != null else 0
+
+
+func edit_hole_world_to_px(wx: float, wz: float) -> Vector2:
+	var s := edit_hole_size()
+	var u := (wx - _world_min.x) / world_size
+	var v := (wz - _world_min.y) / world_size
+	return Vector2(u * float(s - 1), v * float(s - 1))
+
+
+func edit_hole_get(x: int, y: int) -> float:
+	return _hole_img.get_pixel(x, y).r
+
+
+## Tek firca vurusu. open=true -> delik ac (0), false -> kapat (1).
+## Sert kenar (shader 0.5 esikli) -> ongorulebilir magara/ucurum agzi.
+func edit_apply_dab_hole(cx: float, cy: float, r_px: float,
+		open: bool) -> Rect2i:
+	var s := edit_hole_size()
+	var ri := int(ceil(r_px)) + 1
+	var x0 := clampi(int(cx) - ri, 0, s - 1)
+	var y0 := clampi(int(cy) - ri, 0, s - 1)
+	var x1 := clampi(int(cx) + ri, 0, s - 1)
+	var y1 := clampi(int(cy) + ri, 0, s - 1)
+	if x1 < x0 or y1 < y0:
+		return Rect2i(0, 0, 0, 0)
+	var v := 0.0 if open else 1.0
+	var col := Color(v, v, v)
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var dx := float(x) - cx
+			var dy := float(y) - cy
+			if sqrt(dx * dx + dy * dy) >= r_px:
+				continue
+			_hole_img.set_pixel(x, y, col)
+	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+
+func edit_hole_scatter(idx: PackedInt32Array, val: PackedFloat32Array) -> void:
+	var s := edit_hole_size()
+	for i in idx.size():
+		var k := idx[i]
+		@warning_ignore("integer_division")
+		var y := k / s
+		var x := k % s
+		var v := val[i]
+		_hole_img.set_pixel(x, y, Color(v, v, v))
+
+
+func edit_hole_refresh_gpu() -> void:
+	if _hole_tex != null:
+		_hole_tex.update(_hole_img)
+
+
+func edit_save_hole() -> bool:
+	if _hole_img == null:
+		return false
+	if _hole_img.save_png(hole_file) != OK:
+		push_error("[CDLOD] edit_save_hole: PNG yazilamadi")
 		return false
 	return true

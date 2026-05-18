@@ -11,9 +11,10 @@ extends EditorPlugin
 
 var _panel: VBoxContainer
 var _active := false
-var _tool := 0          # 0 Heykel (sculpt)  1 Boya (paint)
+var _tool := 0          # 0 Heykel (sculpt)  1 Boya (paint)  2 Delik (hole)
 var _mode := 0          # sculpt: 0 raise 1 lower 2 smooth 3 flatten
 var _layer := 0         # boya: secili zemin indeksi
+var _hole_open := true  # delik: true=ac (gorunmez)  false=kapat
 var _radius_m := 40.0
 var _strength := 0.06   # sculpt: ham yukseklik / vurus
 var _opacity := 0.5     # boya: agirlik / vurus (0..1)
@@ -31,6 +32,9 @@ var _stroke_val := PackedFloat32Array()
 var _p_key := PackedInt32Array()
 var _p_ip := PackedInt32Array()
 var _p_wp := PackedInt32Array()
+# delik undo: key + orijinal R8 deger (0..1)
+var _o_key := PackedInt32Array()
+var _o_val := PackedFloat32Array()
 var _undo: Array = []          # [{kind, ...}]
 const UNDO_MAX := 8
 
@@ -59,7 +63,7 @@ func _build_panel() -> void:
 	_panel.add_child(en)
 
 	var tool := OptionButton.new()
-	for s in ["Heykel (sculpt)", "Boya (doku)"]:
+	for s in ["Heykel (sculpt)", "Boya (doku)", "Delik (hole)"]:
 		tool.add_item(s)
 	tool.item_selected.connect(_on_tool_changed)
 	_panel.add_child(_row("Arac", tool))
@@ -69,6 +73,12 @@ func _build_panel() -> void:
 		mode.add_item(s)
 	mode.item_selected.connect(func(i): _mode = i)
 	_panel.add_child(_row("Heykel modu", mode))
+
+	var hmode := OptionButton.new()
+	for s in ["Delik ac", "Delik kapat"]:
+		hmode.add_item(s)
+	hmode.item_selected.connect(func(i): _hole_open = (i == 0))
+	_panel.add_child(_row("Delik modu", hmode))
 
 	_layer_opt = OptionButton.new()
 	_layer_opt.item_selected.connect(func(i): _layer = i)
@@ -94,6 +104,11 @@ func _build_panel() -> void:
 	psave.text = "BOYAYI KAYDET (splat)"
 	psave.pressed.connect(_on_save_splat)
 	_panel.add_child(psave)
+
+	var hsave := Button.new()
+	hsave.text = "DELIGI KAYDET (holes)"
+	hsave.pressed.connect(_on_save_hole)
+	_panel.add_child(hsave)
 
 	var undo := Button.new()
 	undo.text = "GERI AL"
@@ -161,7 +176,11 @@ func _refresh_status() -> void:
 	if _status == null:
 		return
 	var m := "VAR" if _find_mgr() else "YOK (sahnede TerrainChunkManager?)"
-	var tl := "Heykel" if _tool == 0 else "Boya z%d" % _layer
+	var tl := "Heykel"
+	if _tool == 1:
+		tl = "Boya z%d" % _layer
+	elif _tool == 2:
+		tl = "Delik " + ("ac" if _hole_open else "kapat")
 	_status.text = "Durum: %s | %s | Manager: %s\nUndo: %d adim" % [
 		("AKTIF" if _active else "kapali"), tl, m, _undo.size()]
 
@@ -198,6 +217,8 @@ func _forward_3d_gui_input(cam: Camera3D, event: InputEvent) -> int:
 	if _tool == 1 and not _mgr.edit_splat_ensure():
 		if _status:
 			_status.text = "Boya icin Inspector'a 'layer_albedo' dokulari ekle."
+		return EditorPlugin.AFTER_GUI_INPUT_PASS
+	if _tool == 2 and not _mgr.edit_hole_ensure():
 		return EditorPlugin.AFTER_GUI_INPUT_PASS
 
 	var pos := Vector2.ZERO
@@ -242,17 +263,22 @@ func _begin_stroke(wp: Vector3) -> void:
 		_stroke_val = PackedFloat32Array()
 		var tc: Vector2 = _mgr.edit_world_to_texel(wp.x, wp.z)
 		_flatten_target = _mgr.edit_sample_raw(int(tc.x), int(tc.y))
-	else:
+	elif _tool == 1:
 		_p_key = PackedInt32Array()
 		_p_ip = PackedInt32Array()
 		_p_wp = PackedInt32Array()
+	else:
+		_o_key = PackedInt32Array()
+		_o_val = PackedFloat32Array()
 
 
 func _dab(wp: Vector3) -> void:
 	if _tool == 0:
 		_dab_sculpt(wp)
-	else:
+	elif _tool == 1:
 		_dab_paint(wp)
+	else:
+		_dab_hole(wp)
 
 
 func _dab_sculpt(wp: Vector3) -> void:
@@ -301,15 +327,41 @@ func _dab_paint(wp: Vector3) -> void:
 	_mgr.edit_splat_refresh_gpu()
 
 
+func _dab_hole(wp: Vector3) -> void:
+	var s: int = _mgr.edit_hole_size()
+	if s <= 0:
+		return
+	var px_m: float = float(_mgr.world_size) / float(s - 1)
+	var r_px := _radius_m / px_m
+	var pc: Vector2 = _mgr.edit_hole_world_to_px(wp.x, wp.z)
+	var ri := int(ceil(r_px)) + 1
+	var x0 := clampi(int(pc.x) - ri, 0, s - 1)
+	var y0 := clampi(int(pc.y) - ri, 0, s - 1)
+	var x1 := clampi(int(pc.x) + ri, 0, s - 1)
+	var y1 := clampi(int(pc.y) + ri, 0, s - 1)
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var key := y * s + x
+			if not _stroke_seen.has(key):
+				_stroke_seen[key] = true
+				_o_key.append(key)
+				_o_val.append(_mgr.edit_hole_get(x, y))
+	_mgr.edit_apply_dab_hole(pc.x, pc.y, r_px, _hole_open)
+	_mgr.edit_hole_refresh_gpu()
+
+
 func _end_stroke() -> void:
 	_stroking = false
 	if _tool == 0:
 		if _stroke_idx.size() > 0:
 			_undo.append({"kind": "h", "idx": _stroke_idx, "val": _stroke_val})
-	else:
+	elif _tool == 1:
 		if _p_key.size() > 0:
 			_undo.append({"kind": "s", "key": _p_key,
 				"ip": _p_ip, "wp": _p_wp})
+	else:
+		if _o_key.size() > 0:
+			_undo.append({"kind": "o", "key": _o_key, "val": _o_val})
 	if _undo.size() > UNDO_MAX:
 		_undo.pop_front()
 	_refresh_status()
@@ -322,6 +374,9 @@ func _on_undo() -> void:
 	if s["kind"] == "h":
 		_mgr.edit_scatter(s["idx"], s["val"])
 		_mgr.edit_refresh_gpu()
+	elif s["kind"] == "o":
+		_mgr.edit_hole_scatter(s["key"], s["val"])
+		_mgr.edit_hole_refresh_gpu()
 	else:
 		var sz: int = _mgr.edit_splat_size()
 		var k: PackedInt32Array = s["key"]
@@ -355,6 +410,18 @@ func _on_save_splat() -> void:
 	var ok: bool = _mgr.edit_save_splat()
 	if _status:
 		_status.text = "BOYA KAYDEDILDI" if ok else "BOYA KAYIT HATASI (Output)"
+	if ok:
+		_rescan_fs()
+
+
+func _on_save_hole() -> void:
+	if not _find_mgr():
+		return
+	if not _mgr.has_method("edit_save_hole"):
+		return
+	var ok: bool = _mgr.edit_hole_ensure() and _mgr.edit_save_hole()
+	if _status:
+		_status.text = "DELIK KAYDEDILDI" if ok else "DELIK KAYIT HATASI (Output)"
 	if ok:
 		_rescan_fs()
 

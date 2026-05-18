@@ -60,6 +60,11 @@ uniform bool  layer_normal_on = false;
 uniform bool  layer_rough_on  = false;
 uniform bool  layer_ao_on     = false;
 
+// DELIK (hole) maskesi: R8, 1=opak 0=delik. hole_on=false iken HIC
+// orneklenmez (&& kisa-devre) -> mevcut arazi birebir korunur.
+uniform bool  hole_on        = false;
+uniform sampler2D hole_tex   : filter_linear, repeat_disable;
+
 varying vec2 v_uv;       // morf'lanmis (geometri)
 varying vec2 v_uv_geo;   // MORF'SUZ -> normal/aydinlatma (dikis YOK)
 varying vec3 v_wpos;
@@ -101,6 +106,11 @@ vec3 apply_nmap(vec3 n, vec3 nm, float k) {
 }
 
 void fragment() {
+	if (hole_on) {
+		vec2 huv = clamp((v_wpos.xz - world_min) / world_size, 0.0, 1.0);
+		if (texture(hole_tex, huv).r < 0.5) discard;
+	}
+
 	float t  = 1.0 / (hr - 1.0);
 	float ws = world_size / (hr - 1.0);
 	float hL = sample_raw(v_uv_geo - vec2(t, 0.0)) * height_scale;
