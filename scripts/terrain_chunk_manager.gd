@@ -59,6 +59,27 @@ class_name TerrainChunkManager
 @export_range(0.0, 2.0) var normal_strength: float = 0.5
 @export_range(0.0, 1.0) var ao_strength: float = 0.7
 
+@export_group("Splat (Doku Boyama)")
+## Boyanabilir zemin turleri. SINIRSIZ: kac doku eklersen o kadar zemin.
+## albedo zorunlu; normal/rough/ao opsiyonel (ayni sira/uzunluk onerilir).
+@export var layer_albedo: Array[Texture2D] = []
+@export var layer_normal: Array[Texture2D] = []
+@export var layer_rough: Array[Texture2D] = []
+@export var layer_ao: Array[Texture2D] = []
+## Editor boya panelinde gorunecek isimler (opsiyonel)
+@export var layer_names: Array[String] = []
+## Boyama haritasi kenar cozunurlugu (texel). 2048 = dengeli.
+@export var splat_size: int = 2048
+## Dizi dokularinin yeniden orneklenecegi kenar (Texture2DArray tek boyut)
+@export var layer_tex_size: int = 1024
+@export_file("*.png") var splat_idx_file: String = "res://terrain/splat_idx.png"
+@export_file("*.png") var splat_w_file: String = "res://terrain/splat_w.png"
+
+@export_group("Delik (Hole)")
+## Delik maskesi kenar cozunurlugu (texel). Splat'tan bagimsiz ayri dosya.
+@export var hole_size: int = 2048
+@export_file("*.png") var hole_file: String = "res://terrain/holes.png"
+
 @export_group("Editor Preview")
 @export var show_in_editor: bool = true
 ## Editor onizlemesinin tek-tip cizecegi LOD seviyesi
@@ -90,6 +111,25 @@ var _col_shape: HeightMapShape3D
 var _col_center: Vector2 = Vector2(INF, INF)
 var _editor_busy: bool = false
 var _editor_nodes: Array[Node] = []
+
+# --- splat (doku boyama) ---
+var _splat_on: bool = false
+var _splat_idx_img: Image
+var _splat_w_img: Image
+var _splat_idx_tex: ImageTexture
+var _splat_w_tex: ImageTexture
+var _arr_alb: Texture2DArray
+var _arr_nrm: Texture2DArray
+var _arr_rgh: Texture2DArray
+var _arr_ao: Texture2DArray
+var _layer_count: int = 0
+var _splat_built: bool = false
+
+# --- delik (hole) maskesi ---
+var _hole_on: bool = false
+var _hole_img: Image
+var _hole_tex: ImageTexture
+var _hole_built: bool = false
 
 
 func _ready() -> void:
@@ -159,10 +199,111 @@ func _init_common() -> bool:
 	_build_pyramid(meta.get("leaf_minmax", []))
 	_build_grid_mesh(_leaf_grid)
 
+	_build_splat()
+	_build_hole()
+
 	_ranges = PackedFloat32Array()
 	for i in _lod_levels:
 		_ranges.append(base_range * pow(2.0, float(i)))
 	return true
+
+
+# === SPLAT (doku boyama) ============================================
+# SINIRSIZ zemin turu: tum dokular tek Texture2DArray'de. Boyama haritasi
+# texel basina EN BASKIN 4 (indeks,agirlik) tutar -> shader maliyeti tur
+# sayisindan bagimsiz sabit. layer_albedo BOSSA splat KAPALI -> mevcut
+# arazi birebir korunur (P0).
+func _layers_to_array(src: Array, fmt: int, fill: Color) -> Texture2DArray:
+	if src.is_empty():
+		return null
+	var any := false
+	for t in src:
+		if t != null:
+			any = true
+			break
+	if not any:
+		return null
+	var sz := maxi(layer_tex_size, 4)
+	var imgs: Array[Image] = []
+	for i in _layer_count:
+		var img: Image
+		var t: Texture2D = src[i] if i < src.size() else null
+		if t != null:
+			img = t.get_image()
+			if img == null:
+				img = Image.create(sz, sz, true, fmt)
+				img.fill(fill)
+			else:
+				img = img.duplicate()
+				if img.is_compressed():
+					img.decompress()
+				if img.get_width() != sz or img.get_height() != sz:
+					img.resize(sz, sz, Image.INTERPOLATE_LANCZOS)
+				img.convert(fmt)
+		else:
+			img = Image.create(sz, sz, true, fmt)
+			img.fill(fill)
+		img.generate_mipmaps()
+		imgs.append(img)
+	var arr := Texture2DArray.new()
+	arr.create_from_images(imgs)
+	return arr
+
+
+func _build_splat() -> void:
+	_splat_built = true
+	_layer_count = layer_albedo.size()
+	_splat_on = _layer_count > 0
+	if not _splat_on:
+		return
+	_arr_alb = _layers_to_array(layer_albedo, Image.FORMAT_RGB8, Color(0.5, 0.5, 0.5))
+	_arr_nrm = _layers_to_array(layer_normal, Image.FORMAT_RGB8, Color(0.5, 0.5, 1.0))
+	_arr_rgh = _layers_to_array(layer_rough, Image.FORMAT_RGB8, Color(1.0, 1.0, 1.0))
+	_arr_ao  = _layers_to_array(layer_ao,    Image.FORMAT_RGB8, Color(1.0, 1.0, 1.0))
+	if _arr_alb == null:
+		_splat_on = false
+		return
+	var sz := maxi(splat_size, 8)
+	var loaded := false
+	if FileAccess.file_exists(splat_idx_file) and FileAccess.file_exists(splat_w_file):
+		var ii := Image.load_from_file(splat_idx_file)
+		var wi := Image.load_from_file(splat_w_file)
+		if ii != null and wi != null \
+		and ii.get_width() == sz and wi.get_width() == sz:
+			ii.convert(Image.FORMAT_RGBA8)
+			wi.convert(Image.FORMAT_RGBA8)
+			_splat_idx_img = ii
+			_splat_w_img = wi
+			loaded = true
+	if not loaded:
+		_splat_idx_img = Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+		_splat_idx_img.fill(Color(0, 0, 0, 0))            # 4 slot da indeks 0
+		_splat_w_img = Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+		_splat_w_img.fill(Color(1, 0, 0, 0))              # slot0 tam agirlik
+	_splat_idx_tex = ImageTexture.create_from_image(_splat_idx_img)
+	_splat_w_tex = ImageTexture.create_from_image(_splat_w_img)
+
+
+# === DELIK (hole) maskesi ===========================================
+# R8 maske: 1=opak, 0=delik. Dosya YOKSA _hole_on=false -> shader hic
+# orneklemez, mevcut arazi birebir korunur (P0). Editor ilk delik acmadan
+# once edit_hole_ensure() varsayilan opak maske olusturur.
+func _build_hole() -> void:
+	_hole_built = true
+	_hole_on = false
+	_hole_img = null
+	_hole_tex = null
+	if not FileAccess.file_exists(hole_file):
+		return
+	var img := Image.load_from_file(hole_file)
+	if img == null:
+		return
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_R8)
+	_hole_img = img
+	_hole_tex = ImageTexture.create_from_image(_hole_img)
+	_hole_on = true
 
 
 func _build_pyramid(leaf_minmax: Array) -> void:
@@ -364,6 +505,32 @@ func _set_texture_uniforms(mat: ShaderMaterial) -> void:
 	mat.set_shader_parameter("tex_tiling", tex_tiling)
 	mat.set_shader_parameter("normal_strength", normal_strength)
 	mat.set_shader_parameter("ao_strength", ao_strength)
+	_set_splat_uniforms(mat)
+	_set_hole_uniforms(mat)
+
+
+func _set_splat_uniforms(mat: ShaderMaterial) -> void:
+	if not _splat_built:
+		_build_splat()
+	mat.set_shader_parameter("splat_on", _splat_on)
+	mat.set_shader_parameter("layer_count", float(maxi(_layer_count, 1)))
+	mat.set_shader_parameter("splat_idx", _splat_idx_tex)
+	mat.set_shader_parameter("splat_w", _splat_w_tex)
+	mat.set_shader_parameter("layer_albedo_arr", _arr_alb)
+	mat.set_shader_parameter("layer_normal_arr", _arr_nrm)
+	mat.set_shader_parameter("layer_rough_arr", _arr_rgh)
+	mat.set_shader_parameter("layer_ao_arr", _arr_ao)
+	mat.set_shader_parameter("layer_albedo_on", _arr_alb != null)
+	mat.set_shader_parameter("layer_normal_on", _arr_nrm != null)
+	mat.set_shader_parameter("layer_rough_on", _arr_rgh != null)
+	mat.set_shader_parameter("layer_ao_on", _arr_ao != null)
+
+
+func _set_hole_uniforms(mat: ShaderMaterial) -> void:
+	if not _hole_built:
+		_build_hole()
+	mat.set_shader_parameter("hole_on", _hole_on)
+	mat.set_shader_parameter("hole_tex", _hole_tex)
 
 
 func _get_camera() -> Camera3D:
@@ -482,3 +649,438 @@ func _clear_editor_preview() -> void:
 	for ch in get_children():
 		if ch is MeshInstance3D and ch.name.begins_with("preview_"):
 			ch.queue_free()
+
+
+# === SCULPT/EDIT API (yalniz editor eklentisi kullanir) ==============
+#  Mevcut runtime mantigi etkilenmez. Veri _height_img uzerinde duzenlenir,
+#  edit_refresh_gpu ile gorsele yansir, edit_save ile diske yazilir.
+enum {EDIT_RAISE, EDIT_LOWER, EDIT_SMOOTH, EDIT_FLATTEN}
+
+
+func edit_ensure() -> bool:
+	if _height_img != null:
+		return true
+	return _init_common()
+
+
+func edit_hr() -> int:
+	return _hr
+
+
+## Dunya XZ -> kesirli texel kordinati
+func edit_world_to_texel(wx: float, wz: float) -> Vector2:
+	var u := (wx - _world_min.x) / world_size
+	var v := (wz - _world_min.y) / world_size
+	return Vector2(u * float(_hr - 1), v * float(_hr - 1))
+
+
+## Isin (origin,dir) ile arazi kesisimi. {hit:bool, pos:Vector3}
+func edit_raycast(origin: Vector3, dir: Vector3, max_dist: float = 20000.0) -> Dictionary:
+	if not edit_ensure():
+		return {"hit": false}
+	var step := maxf(world_size / float(_hr - 1), 1.0)
+	var t := 0.0
+	var prev := origin.y - get_terrain_height(origin.x, origin.z)
+	while t < max_dist:
+		t += step
+		var p := origin + dir * t
+		var d := p.y - get_terrain_height(p.x, p.z)
+		if d <= 0.0 and prev > 0.0:
+			# ikili arama ile incelt
+			var lo := t - step
+			var hi := t
+			for _i in 12:
+				var mid := (lo + hi) * 0.5
+				var pm := origin + dir * mid
+				if pm.y - get_terrain_height(pm.x, pm.z) > 0.0:
+					lo = mid
+				else:
+					hi = mid
+			var hp := origin + dir * hi
+			return {"hit": true, "pos": Vector3(hp.x, get_terrain_height(hp.x, hp.z), hp.z)}
+		prev = d
+	return {"hit": false}
+
+
+func edit_copy_region(r: Rect2i) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(r.size.x * r.size.y)
+	for y in r.size.y:
+		for x in r.size.x:
+			out[y * r.size.x + x] = _height_img.get_pixel(r.position.x + x, r.position.y + y).r
+	return out
+
+
+func edit_paste_region(r: Rect2i, data: PackedFloat32Array) -> void:
+	for y in r.size.y:
+		for x in r.size.x:
+			var v := data[y * r.size.x + x]
+			_height_img.set_pixel(r.position.x + x, r.position.y + y, Color(v, v, v))
+
+
+## Tek fircha vurusu. cx,cy = texel merkez, r_tex = texel yaricap.
+## amount = ham yukseklik (0..1) basina degisim. Etkilenen Rect2i doner.
+func edit_apply_dab(cx: float, cy: float, r_tex: float, amount: float,
+		mode: int, target: float) -> Rect2i:
+	var ri := int(ceil(r_tex)) + 1
+	var x0 := clampi(int(cx) - ri, 0, _hr - 1)
+	var y0 := clampi(int(cy) - ri, 0, _hr - 1)
+	var x1 := clampi(int(cx) + ri, 0, _hr - 1)
+	var y1 := clampi(int(cy) + ri, 0, _hr - 1)
+	if x1 < x0 or y1 < y0:
+		return Rect2i(0, 0, 0, 0)
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var dx := float(x) - cx
+			var dy := float(y) - cy
+			var dist := sqrt(dx * dx + dy * dy) / maxf(r_tex, 0.001)
+			if dist >= 1.0:
+				continue
+			var fall := smoothstep(1.0, 0.0, dist)
+			var h := _height_img.get_pixel(x, y).r
+			match mode:
+				EDIT_RAISE:
+					h += amount * fall
+				EDIT_LOWER:
+					h -= amount * fall
+				EDIT_FLATTEN:
+					h = lerpf(h, target, clampf(amount * 8.0, 0.0, 1.0) * fall)
+				EDIT_SMOOTH:
+					var ax := clampi(x, 1, _hr - 2)
+					var ay := clampi(y, 1, _hr - 2)
+					var avg := (_height_img.get_pixel(ax - 1, ay).r
+							+ _height_img.get_pixel(ax + 1, ay).r
+							+ _height_img.get_pixel(ax, ay - 1).r
+							+ _height_img.get_pixel(ax, ay + 1).r
+							+ h) * 0.2
+					h = lerpf(h, avg, clampf(amount * 8.0, 0.0, 1.0) * fall)
+			h = clampf(h, 0.0, 1.0)
+			_height_img.set_pixel(x, y, Color(h, h, h))
+	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+
+## Merkez texeldeki ham yukseklik (flatten hedefi icin)
+func edit_sample_raw(cx: int, cy: int) -> float:
+	cx = clampi(cx, 0, _hr - 1)
+	cy = clampi(cy, 0, _hr - 1)
+	return _height_img.get_pixel(cx, cy).r
+
+
+## Index listesine gore toplu geri-yazma (undo icin hizli)
+func edit_scatter(idx: PackedInt32Array, val: PackedFloat32Array) -> void:
+	for i in idx.size():
+		var k := idx[i]
+		@warning_ignore("integer_division")
+		var y := k / _hr
+		var x := k % _hr
+		var v := val[i]
+		_height_img.set_pixel(x, y, Color(v, v, v))
+
+
+## Duzenlemeyi GPU dokusuna yansit (hizli; piramit yalniz edit_save'de)
+func edit_refresh_gpu() -> void:
+	if _height_tex != null:
+		_height_tex.update(_height_img)
+
+
+func edit_rebuild_pyramid() -> void:
+	@warning_ignore("integer_division")
+	var cell := (_hr - 1) / _leaves
+	var lm := []
+	for ly in _leaves:
+		for lx in _leaves:
+			var c_min := INF
+			var c_max := -INF
+			var bx := lx * cell
+			var by := ly * cell
+			for yy in range(by, by + cell + 1):
+				for xx in range(bx, bx + cell + 1):
+					var h := _height_img.get_pixel(xx, yy).r
+					c_min = minf(c_min, h)
+					c_max = maxf(c_max, h)
+			lm.append({"min": c_min, "max": c_max})
+	_build_pyramid(lm)
+
+
+## height.bin + cdlod_meta.json diske yaz
+func edit_save() -> bool:
+	if _height_img == null:
+		return false
+	var hf := FileAccess.open(height_file, FileAccess.WRITE)
+	if hf == null:
+		push_error("[CDLOD] edit_save: height yazilamadi")
+		return false
+	hf.store_buffer(_height_img.get_data())
+	hf.close()
+	@warning_ignore("integer_division")
+	var cell := (_hr - 1) / _leaves
+	var g_min := INF
+	var g_max := -INF
+	var lm := []
+	for ly in _leaves:
+		for lx in _leaves:
+			var c_min := INF
+			var c_max := -INF
+			var bx := lx * cell
+			var by := ly * cell
+			for yy in range(by, by + cell + 1):
+				for xx in range(bx, bx + cell + 1):
+					var h := _height_img.get_pixel(xx, yy).r
+					c_min = minf(c_min, h)
+					c_max = maxf(c_max, h)
+			lm.append({"min": c_min, "max": c_max})
+			g_min = minf(g_min, c_min)
+			g_max = maxf(g_max, c_max)
+	var meta := {
+		"hr": _hr, "leaves": _leaves, "leaf_grid": _leaf_grid,
+		"lod_levels": _lod_levels, "format": "rf",
+		"data_min": g_min, "data_max": g_max, "leaf_minmax": lm,
+	}
+	var mf := FileAccess.open(meta_file, FileAccess.WRITE)
+	if mf == null:
+		push_error("[CDLOD] edit_save: meta yazilamadi")
+		return false
+	mf.store_string(JSON.stringify(meta))
+	mf.close()
+	_build_pyramid(lm)
+	return true
+
+
+# === SPLAT EDIT API (yalniz editor eklentisi) =======================
+#  _splat_idx_img/_splat_w_img uzerinde duzenler, edit_splat_refresh_gpu
+#  ile gorsele yansir, edit_save_splat ile PNG yazar. Runtime DEGISMEZ.
+func edit_layer_count() -> int:
+	if not _splat_built:
+		_build_splat()
+	return layer_albedo.size()
+
+
+func edit_layer_name(i: int) -> String:
+	if i >= 0 and i < layer_names.size() and layer_names[i] != "":
+		return layer_names[i]
+	return "Zemin %d" % i
+
+
+func edit_splat_ensure() -> bool:
+	if not _splat_built:
+		if _height_img == null and not _init_common():
+			return false
+		else:
+			_build_splat()
+	return _splat_on and _splat_idx_img != null
+
+
+func edit_splat_size() -> int:
+	return _splat_idx_img.get_width() if _splat_idx_img != null else 0
+
+
+func edit_splat_world_to_px(wx: float, wz: float) -> Vector2:
+	var s := edit_splat_size()
+	var u := (wx - _world_min.x) / world_size
+	var v := (wz - _world_min.y) / world_size
+	return Vector2(u * float(s - 1), v * float(s - 1))
+
+
+## Undo yakalama: pikselin (idx,w) durumu iki int'e paketli
+func edit_splat_pack(x: int, y: int) -> Vector2i:
+	var ci := _splat_idx_img.get_pixel(x, y)
+	var cw := _splat_w_img.get_pixel(x, y)
+	var ip := int(round(ci.r * 255.0)) | (int(round(ci.g * 255.0)) << 8) \
+		| (int(round(ci.b * 255.0)) << 16) | (int(round(ci.a * 255.0)) << 24)
+	var wp := int(round(cw.r * 255.0)) | (int(round(cw.g * 255.0)) << 8) \
+		| (int(round(cw.b * 255.0)) << 16) | (int(round(cw.a * 255.0)) << 24)
+	return Vector2i(ip, wp)
+
+
+func edit_splat_set_packed(x: int, y: int, ip: int, wp: int) -> void:
+	_splat_idx_img.set_pixel(x, y, Color(
+		float(ip & 255) / 255.0, float((ip >> 8) & 255) / 255.0,
+		float((ip >> 16) & 255) / 255.0, float((ip >> 24) & 255) / 255.0))
+	_splat_w_img.set_pixel(x, y, Color(
+		float(wp & 255) / 255.0, float((wp >> 8) & 255) / 255.0,
+		float((wp >> 16) & 255) / 255.0, float((wp >> 24) & 255) / 255.0))
+
+
+## Tek firca vurusu (boya). cx,cy splat texel merkez, r_px texel yaricap,
+## strength 0..1, layer = secili zemin indeksi. Etkilenen Rect2i doner.
+func edit_apply_dab_splat(cx: float, cy: float, r_px: float,
+		strength: float, layer: int) -> Rect2i:
+	var s := edit_splat_size()
+	var ri := int(ceil(r_px)) + 1
+	var x0 := clampi(int(cx) - ri, 0, s - 1)
+	var y0 := clampi(int(cy) - ri, 0, s - 1)
+	var x1 := clampi(int(cx) + ri, 0, s - 1)
+	var y1 := clampi(int(cy) + ri, 0, s - 1)
+	if x1 < x0 or y1 < y0:
+		return Rect2i(0, 0, 0, 0)
+	var lc := maxi(layer_albedo.size(), 1)
+	var L := clampi(layer, 0, lc - 1)
+	var ids := PackedInt32Array([0, 0, 0, 0])
+	var ws := PackedFloat32Array([0, 0, 0, 0])
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var dx := float(x) - cx
+			var dy := float(y) - cy
+			var dist := sqrt(dx * dx + dy * dy) / maxf(r_px, 0.001)
+			if dist >= 1.0:
+				continue
+			var add := strength * smoothstep(1.0, 0.0, dist)
+			if add <= 0.0:
+				continue
+			var ci := _splat_idx_img.get_pixel(x, y)
+			var cw := _splat_w_img.get_pixel(x, y)
+			ids[0] = int(round(ci.r * 255.0)); ws[0] = cw.r
+			ids[1] = int(round(ci.g * 255.0)); ws[1] = cw.g
+			ids[2] = int(round(ci.b * 255.0)); ws[2] = cw.b
+			ids[3] = int(round(ci.a * 255.0)); ws[3] = cw.a
+			# secili zemin hangi slotta? yoksa en zayif slota yerlestir
+			var j := -1
+			for k in 4:
+				if ids[k] == L and ws[k] > 0.0:
+					j = k
+					break
+			if j < 0:
+				var mw := ws[0]
+				j = 0
+				for k in range(1, 4):
+					if ws[k] < mw:
+						mw = ws[k]
+						j = k
+				ids[j] = L
+				ws[j] = 0.0
+			var wsel: float = clampf(ws[j] + add, 0.0, 1.0)
+			var so := 0.0
+			for k in 4:
+				if k != j:
+					so += ws[k]
+			if so > 1e-5:
+				var sc := (1.0 - wsel) / so
+				for k in 4:
+					if k != j:
+						ws[k] *= sc
+			else:
+				wsel = 1.0
+			ws[j] = wsel
+			_splat_idx_img.set_pixel(x, y, Color(
+				float(ids[0]) / 255.0, float(ids[1]) / 255.0,
+				float(ids[2]) / 255.0, float(ids[3]) / 255.0))
+			_splat_w_img.set_pixel(x, y, Color(ws[0], ws[1], ws[2], ws[3]))
+	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+
+func edit_splat_refresh_gpu() -> void:
+	if _splat_idx_tex != null:
+		_splat_idx_tex.update(_splat_idx_img)
+	if _splat_w_tex != null:
+		_splat_w_tex.update(_splat_w_img)
+
+
+func edit_save_splat() -> bool:
+	if _splat_idx_img == null or _splat_w_img == null:
+		return false
+	var e1 := _splat_idx_img.save_png(splat_idx_file)
+	var e2 := _splat_w_img.save_png(splat_w_file)
+	if e1 != OK or e2 != OK:
+		push_error("[CDLOD] edit_save_splat: PNG yazilamadi")
+		return false
+	return true
+
+
+# === DELIK EDIT API (yalniz editor eklentisi) =======================
+#  _hole_img (R8) uzerinde duzenler, edit_hole_refresh_gpu ile gorsele
+#  yansir, edit_save_hole ile PNG yazar. Runtime mantigi DEGISMEZ.
+func _apply_hole_to_materials() -> void:
+	for mi in _pool:
+		var m := mi.material_override as ShaderMaterial
+		if m != null:
+			m.set_shader_parameter("hole_on", _hole_on)
+			m.set_shader_parameter("hole_tex", _hole_tex)
+	for nd in _editor_nodes:
+		if nd is MeshInstance3D:
+			var m2 := (nd as MeshInstance3D).material_override as ShaderMaterial
+			if m2 != null:
+				m2.set_shader_parameter("hole_on", _hole_on)
+				m2.set_shader_parameter("hole_tex", _hole_tex)
+
+
+## Delik maskesini hazirla (yoksa varsayilan opak olustur). Editor'de
+## ilk dokunustan once cagrilir.
+func edit_hole_ensure() -> bool:
+	if not _hole_built:
+		if _height_img == null and not _init_common():
+			return false
+		else:
+			_build_hole()
+	if _hole_img == null:
+		var sz := maxi(hole_size, 8)
+		_hole_img = Image.create(sz, sz, false, Image.FORMAT_R8)
+		_hole_img.fill(Color(1, 1, 1))            # 1 = opak (delik yok)
+	if _hole_tex == null:
+		_hole_tex = ImageTexture.create_from_image(_hole_img)
+	_hole_on = true
+	_apply_hole_to_materials()
+	return true
+
+
+func edit_hole_size() -> int:
+	return _hole_img.get_width() if _hole_img != null else 0
+
+
+func edit_hole_world_to_px(wx: float, wz: float) -> Vector2:
+	var s := edit_hole_size()
+	var u := (wx - _world_min.x) / world_size
+	var v := (wz - _world_min.y) / world_size
+	return Vector2(u * float(s - 1), v * float(s - 1))
+
+
+func edit_hole_get(x: int, y: int) -> float:
+	return _hole_img.get_pixel(x, y).r
+
+
+## Tek firca vurusu. open=true -> delik ac (0), false -> kapat (1).
+## Sert kenar (shader 0.5 esikli) -> ongorulebilir magara/ucurum agzi.
+func edit_apply_dab_hole(cx: float, cy: float, r_px: float,
+		open: bool) -> Rect2i:
+	var s := edit_hole_size()
+	var ri := int(ceil(r_px)) + 1
+	var x0 := clampi(int(cx) - ri, 0, s - 1)
+	var y0 := clampi(int(cy) - ri, 0, s - 1)
+	var x1 := clampi(int(cx) + ri, 0, s - 1)
+	var y1 := clampi(int(cy) + ri, 0, s - 1)
+	if x1 < x0 or y1 < y0:
+		return Rect2i(0, 0, 0, 0)
+	var v := 0.0 if open else 1.0
+	var col := Color(v, v, v)
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var dx := float(x) - cx
+			var dy := float(y) - cy
+			if sqrt(dx * dx + dy * dy) >= r_px:
+				continue
+			_hole_img.set_pixel(x, y, col)
+	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+
+func edit_hole_scatter(idx: PackedInt32Array, val: PackedFloat32Array) -> void:
+	var s := edit_hole_size()
+	for i in idx.size():
+		var k := idx[i]
+		@warning_ignore("integer_division")
+		var y := k / s
+		var x := k % s
+		var v := val[i]
+		_hole_img.set_pixel(x, y, Color(v, v, v))
+
+
+func edit_hole_refresh_gpu() -> void:
+	if _hole_tex != null:
+		_hole_tex.update(_hole_img)
+
+
+func edit_save_hole() -> bool:
+	if _hole_img == null:
+		return false
+	if _hole_img.save_png(hole_file) != OK:
+		push_error("[CDLOD] edit_save_hole: PNG yazilamadi")
+		return false
+	return true

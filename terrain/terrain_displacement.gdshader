@@ -44,6 +44,27 @@ uniform float tex_tiling     = 12.0;
 uniform float normal_strength= 0.5;
 uniform float ao_strength    = 1.0;
 
+// SPLAT (doku boyama): SINIRSIZ zemin, texel basina en baskin 4
+// (indeks,agirlik). splat_on=false iken bu blok HIC calismaz -> mevcut
+// arazi birebir korunur.
+uniform bool  splat_on       = false;
+uniform float layer_count    = 1.0;
+uniform sampler2D splat_idx  : filter_nearest, repeat_disable;
+uniform sampler2D splat_w    : filter_linear,  repeat_disable;
+uniform sampler2DArray layer_albedo_arr : source_color,      filter_linear_mipmap, repeat_enable;
+uniform sampler2DArray layer_normal_arr : hint_normal,       filter_linear_mipmap, repeat_enable;
+uniform sampler2DArray layer_rough_arr  : hint_roughness_r,  filter_linear_mipmap, repeat_enable;
+uniform sampler2DArray layer_ao_arr     : hint_default_white,filter_linear_mipmap, repeat_enable;
+uniform bool  layer_albedo_on = false;
+uniform bool  layer_normal_on = false;
+uniform bool  layer_rough_on  = false;
+uniform bool  layer_ao_on     = false;
+
+// DELIK (hole) maskesi: R8, 1=opak 0=delik. hole_on=false iken HIC
+// orneklenmez (&& kisa-devre) -> mevcut arazi birebir korunur.
+uniform bool  hole_on        = false;
+uniform sampler2D hole_tex   : filter_linear, repeat_disable;
+
 varying vec2 v_uv;       // morf'lanmis (geometri)
 varying vec2 v_uv_geo;   // MORF'SUZ -> normal/aydinlatma (dikis YOK)
 varying vec3 v_wpos;
@@ -85,6 +106,11 @@ vec3 apply_nmap(vec3 n, vec3 nm, float k) {
 }
 
 void fragment() {
+	if (hole_on) {
+		vec2 huv = clamp((v_wpos.xz - world_min) / world_size, 0.0, 1.0);
+		if (texture(hole_tex, huv).r < 0.5) discard;
+	}
+
 	float t  = 1.0 / (hr - 1.0);
 	float ws = world_size / (hr - 1.0);
 	float hL = sample_raw(v_uv_geo - vec2(t, 0.0)) * height_scale;
@@ -98,24 +124,73 @@ void fragment() {
 
 	vec2 uvw = v_wpos.xz / max(tex_tiling, 0.001);
 
-	if (albedo_on) {
-		ALBEDO = texture(albedo_tex, uvw).rgb;
+	if (splat_on && layer_albedo_on) {
+		vec2 suv = clamp((v_wpos.xz - world_min) / world_size, 0.0, 1.0);
+		vec4 si = texture(splat_idx, suv);
+		vec4 sw = texture(splat_w, suv);
+		float wsum = sw.r + sw.g + sw.b + sw.a;
+		if (wsum < 1e-4) { sw = vec4(1.0, 0.0, 0.0, 0.0); wsum = 1.0; }
+		float inv = 1.0 / wsum;
+		float lmax = max(layer_count - 1.0, 0.0);
+		float i0 = clamp(floor(si.r * 255.0 + 0.5), 0.0, lmax);
+		float i1 = clamp(floor(si.g * 255.0 + 0.5), 0.0, lmax);
+		float i2 = clamp(floor(si.b * 255.0 + 0.5), 0.0, lmax);
+		float i3 = clamp(floor(si.a * 255.0 + 0.5), 0.0, lmax);
+
+		vec3 alb = texture(layer_albedo_arr, vec3(uvw, i0)).rgb * sw.r;
+		alb += texture(layer_albedo_arr, vec3(uvw, i1)).rgb * sw.g;
+		alb += texture(layer_albedo_arr, vec3(uvw, i2)).rgb * sw.b;
+		alb += texture(layer_albedo_arr, vec3(uvw, i3)).rgb * sw.a;
+		ALBEDO = alb * inv;
+
+		if (layer_normal_on) {
+			vec3 nm = texture(layer_normal_arr, vec3(uvw, i0)).rgb * sw.r;
+			nm += texture(layer_normal_arr, vec3(uvw, i1)).rgb * sw.g;
+			nm += texture(layer_normal_arr, vec3(uvw, i2)).rgb * sw.b;
+			nm += texture(layer_normal_arr, vec3(uvw, i3)).rgb * sw.a;
+			n = apply_nmap(n, nm * inv, normal_strength);
+		}
+		NORMAL = n;
+
+		if (layer_rough_on) {
+			float rg = texture(layer_rough_arr, vec3(uvw, i0)).r * sw.r;
+			rg += texture(layer_rough_arr, vec3(uvw, i1)).r * sw.g;
+			rg += texture(layer_rough_arr, vec3(uvw, i2)).r * sw.b;
+			rg += texture(layer_rough_arr, vec3(uvw, i3)).r * sw.a;
+			ROUGHNESS = rg * inv;
+		} else {
+			ROUGHNESS = 1.0;
+		}
+
+		if (layer_ao_on) {
+			float ao = texture(layer_ao_arr, vec3(uvw, i0)).r * sw.r;
+			ao += texture(layer_ao_arr, vec3(uvw, i1)).r * sw.g;
+			ao += texture(layer_ao_arr, vec3(uvw, i2)).r * sw.b;
+			ao += texture(layer_ao_arr, vec3(uvw, i3)).r * sw.a;
+			AO = mix(1.0, ao * inv, ao_strength);
+			AO_LIGHT_AFFECT = 1.0;
+		}
+		METALLIC = 0.0;
 	} else {
-		vec3 col = mix(low_color, high_color, clamp(h01, 0.0, 1.0));
-		col = mix(col, slope_color, smoothstep(0.35, 0.7, slope));
-		ALBEDO = col;
-	}
+		if (albedo_on) {
+			ALBEDO = texture(albedo_tex, uvw).rgb;
+		} else {
+			vec3 col = mix(low_color, high_color, clamp(h01, 0.0, 1.0));
+			col = mix(col, slope_color, smoothstep(0.35, 0.7, slope));
+			ALBEDO = col;
+		}
 
-	if (normal_on) {
-		n = apply_nmap(n, texture(normal_tex, uvw).rgb, normal_strength);
-	}
-	NORMAL = n;
+		if (normal_on) {
+			n = apply_nmap(n, texture(normal_tex, uvw).rgb, normal_strength);
+		}
+		NORMAL = n;
 
-	ROUGHNESS = rough_on ? texture(rough_tex, uvw).r : 1.0;
-	if (ao_on) {
-		float ao = texture(ao_tex, uvw).r;
-		AO = mix(1.0, ao, ao_strength);
-		AO_LIGHT_AFFECT = 1.0;
+		ROUGHNESS = rough_on ? texture(rough_tex, uvw).r : 1.0;
+		if (ao_on) {
+			float ao = texture(ao_tex, uvw).r;
+			AO = mix(1.0, ao, ao_strength);
+			AO_LIGHT_AFFECT = 1.0;
+		}
+		METALLIC = 0.0;
 	}
-	METALLIC = 0.0;
 }

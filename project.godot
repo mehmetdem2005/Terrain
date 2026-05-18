@@ -15,6 +15,10 @@ config/features=PackedStringArray("4.6", "Mobile")
 window/size/viewport_width=1280
 window/size/viewport_height=720
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/terrain_tools/plugin.cfg")
+
 [input]
 
 move_forward={
